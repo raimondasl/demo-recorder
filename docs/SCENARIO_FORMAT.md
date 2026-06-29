@@ -43,9 +43,10 @@ sensible default.
 | | `stepPauseMs` | `800` | Pause after each step. |
 | | `shell` | `powershell` | Default shell for `run`. |
 | `narration` | `enabled` | `true` | Spoken narration on/off. |
-| | `engine` | `winrt` | `winrt` = OneCore + installed **Natural** neural voices (far better); `sapi` = legacy David/Zira. Falls back to `sapi` if WinRT is unavailable. |
+| | `engine` | `winrt` | `piper` = **offline neural voices** (best quality, free — run `Setup-Piper.ps1`); `winrt` = built-in OneCore voices (David/Zira/Mark); `sapi` = legacy. Unavailable engines fall back gracefully. |
 | | `captureToVideo` | `true` | With ffmpeg recording, bake narration into the MP4 (rendered to WAV + muxed at the right time; no Stereo Mix needed). |
-| | `voice` | _default_ | Voice display name — list with `Invoke-Demo.ps1 -ListVoices`. e.g. `Microsoft Aria (Natural)`, `Microsoft Zira`. |
+| | `voice` | _default_ | winrt/sapi only (Piper uses its model). List with `Invoke-Demo.ps1 -ListVoices`. e.g. `Microsoft Zira`. |
+| | `piper` | _auto_ | `{ "exe": ..., "model": ... }` — paths for the Piper engine. Defaults: `tools/piper/piper.exe`, `voices/en_US-lessac-medium.onnx`. |
 | | `rate` / `volume` | `0` / `100` | Speech rate (-10..10), volume (0..100). |
 | `captions` | `enabled` | `true` | On-screen captions on/off. |
 | | `position` | `bottom` | `top` / `center` / `bottom`. |

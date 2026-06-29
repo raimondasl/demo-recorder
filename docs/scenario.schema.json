@@ -54,11 +54,20 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
-            "engine": { "enum": ["winrt", "sapi"], "default": "winrt", "description": "winrt = OneCore + installed 'Natural' neural voices (much better); sapi = legacy David/Zira voices. Falls back to sapi if WinRT is unavailable." },
+            "engine": { "enum": ["piper", "winrt", "sapi"], "default": "winrt", "description": "piper = offline neural voices (best quality, free; run Setup-Piper.ps1); winrt = built-in OneCore voices (David/Zira/Mark); sapi = legacy voices. Note: Windows 'Natural' voices added via Narrator are locked to Narrator and cannot be used here. Unavailable engines fall back gracefully." },
             "captureToVideo": { "type": "boolean", "default": true, "description": "When recording with ffmpeg, render each narration line to WAV and mux it into the video at the right time (no Stereo Mix needed). If false, narration is only heard live." },
-            "voice": { "type": "string", "description": "Voice display name. List options with: Invoke-Demo.ps1 -ListVoices. e.g. 'Microsoft Aria (Natural)', 'Microsoft Andrew (Natural)', or 'Microsoft Zira'." },
-            "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
-            "volume": { "type": "integer", "default": 100, "minimum": 0, "maximum": 100 }
+            "voice": { "type": "string", "description": "Voice (winrt/sapi only; Piper uses the model). List options with: Invoke-Demo.ps1 -ListVoices. e.g. 'Microsoft Zira'." },
+            "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10, "description": "Speaking rate; higher is faster (all engines)." },
+            "volume": { "type": "integer", "default": 100, "minimum": 0, "maximum": 100, "description": "Volume 0-100 (winrt/sapi)." },
+            "piper": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Piper engine settings (optional; sensible defaults are auto-detected).",
+              "properties": {
+                "exe": { "type": "string", "description": "Path to piper.exe (default tools/piper/piper.exe)." },
+                "model": { "type": "string", "description": "Path to the .onnx voice model (default voices/en_US-lessac-medium.onnx)." }
+              }
+            }
           }
         },
         "captions": {

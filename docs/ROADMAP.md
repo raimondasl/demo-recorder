@@ -9,7 +9,13 @@ roughly by priority.
 - [x] Scenario format + JSON Schema + Claude generation prompt + validator
 - [x] On-screen captions (click-through, non-focus-stealing) and screenshots
 - [x] Narration baked into the video (render → timestamp → ffmpeg mux; no Stereo Mix)
-- [x] **`winrt` narration engine** — OneCore + installed **Natural** neural voices
+- [x] **`winrt` / `sapi` narration engines** — built-in Windows OneCore / legacy voices
+- [x] **`piper` narration engine** — offline neural voices (free, natural; `Setup-Piper.ps1`)
+
+> Note: Windows 11 "Natural" voices added via Narrator (Aria/Ava/Andrew) are
+> packaged as Narrator-only app packages and are NOT exposed to the SAPI/WinRT
+> speech APIs, so no third-party app can synthesize with them. Piper fills that
+> gap for free/offline neural narration.
 
 ## Narration voices — additional engines
 
@@ -29,13 +35,13 @@ Best naturalness/expressiveness. Pre-render each line to WAV at run time.
   hash of (text+voice+engine) so re-runs don't re-bill. Fail closed to `winrt`
   with a clear warning if the key is missing or the call fails.
 
-### Piper (free, local, offline neural) — planned
-Good neural quality with no key and no cloud, runs fully offline.
-- **Needs:** the `piper` binary + a voice model (`.onnx` + `.json`), run via a
-  **uv**-managed environment (no system Python — see project convention).
-- **Design sketch:** `narration.engine: "piper"`, `narration.model` path; a small
-  setup script downloads a chosen voice (e.g. `en_US-ryan-high`) into the repo.
-  `Render-NarrationWavPiper` shells out to `uv run piper ... -f out.wav`.
+### Piper (free, local, offline neural) — DONE
+Implemented via the self-contained Piper Windows binary (no Python at all).
+`Setup-Piper.ps1` downloads `tools/piper/piper.exe` + a voice model into `voices/`;
+`narration.engine: "piper"` renders each line with `Render-NarrationWavPiper`
+(text on stdin → WAV), which feeds the existing mux pipeline. Pick voices with
+`Setup-Piper.ps1 -Voice <name>`. Possible follow-ups: bundle more default voices,
+optional GPU (onnxruntime) build.
 
 ## Recording
 - [ ] **`obs` mode** — OBS WebSocket (obsws): scenes, webcam overlay, picture-in-

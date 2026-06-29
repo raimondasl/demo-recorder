@@ -18,3 +18,7 @@ desktop.ini
 # Temp
 *.tmp
 scratch/
+
+# Piper TTS binary + voice models (downloaded by Setup-Piper.ps1)
+tools/
+voices/

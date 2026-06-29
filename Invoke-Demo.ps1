@@ -57,13 +57,18 @@ Import-Module (Join-Path $modules 'Scenario.psm1') -Force -DisableNameChecking
 
 # --- List voices and exit (helper for choosing narration.voice) -------------
 if ($ListVoices) {
-    Write-Host "WinRT voices (recommended - includes any installed Natural neural voices):" -ForegroundColor Cyan
+    Write-Host "WinRT voices (engine 'winrt'; built-in Windows OneCore voices):" -ForegroundColor Cyan
     $wv = Get-WinRTVoices
     if ($wv) { $wv | ForEach-Object { Write-Host "  $_" } } else { Write-Host "  (WinRT speech unavailable on this system)" -ForegroundColor Yellow }
     Write-Host "SAPI voices (legacy):" -ForegroundColor Cyan
     Get-DemoVoices | ForEach-Object { Write-Host "  $_" }
+    Write-Host "Piper voices (engine 'piper'; offline neural, from voices/):" -ForegroundColor Cyan
+    $voicesDir = Join-Path $PSScriptRoot 'voices'
+    $models = if (Test-Path $voicesDir) { Get-ChildItem $voicesDir -Filter *.onnx -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName } }
+    if ($models) { $models | ForEach-Object { Write-Host "  $_" } } else { Write-Host "  (none - run .\Setup-Piper.ps1)" -ForegroundColor Yellow }
     Write-Host ""
-    Write-Host "No 'Natural' voice above? Install free ones: Settings > Accessibility > Narrator > Add natural voices." -ForegroundColor DarkGray
+    Write-Host "Note: Windows 'Natural' voices added via Narrator are locked to Narrator and NOT usable here." -ForegroundColor DarkGray
+    Write-Host "For natural narration, use engine 'piper' (.\Setup-Piper.ps1) - free & offline." -ForegroundColor DarkGray
     exit 0
 }
 if (-not $Scenario) { Write-Host "Specify a scenario file (or use -ListVoices)." -ForegroundColor Red; exit 1 }
@@ -132,7 +137,13 @@ $cfg = @{
 $minimize = (-not $KeepController) -and [bool](Get-Prop $settings 'minimizeControllerWindow' $true)
 $countdown = [int](Get-Prop $startup 'countdownSec' 3)
 
-# Narration engine: 'winrt' (OneCore/Natural neural voices) or 'sapi' (legacy).
+# Narration engine: 'piper' (offline neural), 'winrt' (OneCore voices), or 'sapi'.
+$piperCfg   = Get-Prop $narr 'piper'
+$piperExe   = Get-Prop $piperCfg 'exe'   (Join-Path $PSScriptRoot 'tools\piper\piper.exe')
+$piperModel = Get-Prop $piperCfg 'model' (Join-Path $PSScriptRoot 'voices\en_US-lessac-medium.onnx')
+if (-not [System.IO.Path]::IsPathRooted($piperExe))   { $piperExe   = Join-Path $PSScriptRoot $piperExe }
+if (-not [System.IO.Path]::IsPathRooted($piperModel)) { $piperModel = Join-Path $PSScriptRoot $piperModel }
+[void](Set-PiperConfig -Exe $piperExe -Model $piperModel)
 $narrEngine = Set-NarrationEngine -Engine (Get-Prop $narr 'engine' 'winrt')
 
 # Narration is baked into the video (post-mux) only when we own a recorded file.

@@ -127,28 +127,37 @@ afterward — **no Stereo Mix or loopback device needed**. Disable with
 `narration.captureToVideo: false`. To also capture other app/system audio, set
 `recording.audioDevice` (see [docs/SCENARIO_FORMAT.md](docs/SCENARIO_FORMAT.md)).
 
-### Better-sounding voices (free, local)
+### Better-sounding voices — Piper (free, offline neural)
 
-By default narration uses the **`winrt`** engine, which can use Windows' modern
-**Natural** neural voices — dramatically less robotic than the legacy David/Zira
-voices, and fully offline/free. They aren't installed by default:
+The built-in Windows voices are robotic. For natural, non-robotic narration —
+free, offline, no API key — use the **`piper`** engine. One-time setup downloads a
+small self-contained binary (no Python) and a voice model:
 
-1. **Settings → Accessibility → Narrator → Add natural voices → Add**, pick e.g.
-   *Microsoft Aria (Natural)*, *Andrew*, *Ava*, *Jenny*… and install.
-   (Also under **Settings → Time & language → Speech → Manage voices**.)
-2. See what's available to the engine:
-   ```powershell
-   .\Invoke-Demo.ps1 -ListVoices
-   ```
-3. Set it in your scenario:
-   ```json
-   "narration": { "engine": "winrt", "voice": "Microsoft Aria (Natural)" }
-   ```
+```powershell
+.\Setup-Piper.ps1                 # downloads tools/piper + voices/en_US-lessac-medium
+.\Setup-Piper.ps1 -Voice en_US-ryan-high   # or pick another voice
+```
 
-Without a Natural voice installed, `winrt` still works using the built-in OneCore
-voices (David/Mark/Zira). Set `"engine": "sapi"` to force the legacy voices.
-Want cloud-grade voices (OpenAI/Azure/ElevenLabs) or offline Piper neural TTS?
-Those are planned — see [docs/ROADMAP.md](docs/ROADMAP.md).
+Then set the engine in your scenario:
+```json
+"narration": { "engine": "piper" }
+```
+The `piper.exe` and model paths are auto-detected; override with
+`"piper": { "model": "voices/en_US-ryan-high.onnx" }`. Browse voices at
+[rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
+
+**Engine options** (`narration.engine`):
+- **`piper`** — offline neural, best quality, free. Needs `Setup-Piper.ps1`.
+- **`winrt`** (default) — built-in Windows OneCore voices (David/Zira/Mark).
+- **`sapi`** — legacy SAPI5 voices.
+
+Unavailable engines fall back gracefully (e.g. `piper` → `winrt` if not set up).
+
+> ⚠️ Windows 11 **"Natural" voices added via Narrator** (Aria/Ava/Andrew) are
+> packaged as Narrator-only app packages and are **not** exposed to SAPI/WinRT, so
+> no third-party app (including this one) can use them. Piper is the free/offline
+> way to get neural-quality narration. Cloud voices (OpenAI/Azure/ElevenLabs) are
+> on the [roadmap](docs/ROADMAP.md).
 
 ---
 
@@ -199,8 +208,9 @@ Design notes:
 Full list in **[docs/ROADMAP.md](docs/ROADMAP.md)**. Highlights:
 
 - [x] Narration baked into the video (no Stereo Mix needed)
-- [x] `winrt` narration engine (Windows Natural neural voices)
-- [ ] Cloud neural TTS (OpenAI/Azure/ElevenLabs) and offline Piper voices
+- [x] `piper` offline neural narration engine (free, natural voices)
+- [x] `winrt`/`sapi` engines (built-in Windows voices)
+- [ ] Cloud neural TTS (OpenAI/Azure/ElevenLabs)
 - [ ] `obs` recording mode (OBS WebSocket: scenes, webcam, overlays)
 - [ ] Coordinate-free UI targeting; `cmd`/WSL terminal presets
 

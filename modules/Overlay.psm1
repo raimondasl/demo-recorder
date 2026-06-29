@@ -62,7 +62,9 @@ $script:Synths      = New-Object System.Collections.ArrayList
 $script:Players     = New-Object System.Collections.ArrayList   # async SoundPlayers kept alive
 $script:TempWavs    = New-Object System.Collections.ArrayList   # live-only WinRT WAVs to clean up
 $script:NarrationCapture = $null   # when set, narration is rendered to WAV + timestamped for muxing
-$script:NarrationEngine  = 'sapi'  # 'sapi' | 'winrt'; set via Set-NarrationEngine
+$script:NarrationEngine  = 'sapi'  # 'sapi' | 'winrt' | 'piper'; set via Set-NarrationEngine
+$script:PiperExe   = $null
+$script:PiperModel = $null
 
 # The work each caption runspace performs. Kept as a scriptblock so it can be
 # pushed into an STA runspace.
@@ -139,15 +141,54 @@ function Await {
     return $task.Result
 }
 
+function Set-PiperConfig {
+    param([string]$Exe, [string]$Model)
+    $script:PiperExe   = $Exe
+    $script:PiperModel = $Model
+    return (($Exe -and (Test-Path $Exe)) -and ($Model -and (Test-Path $Model)))
+}
+
+function Test-PiperReady {
+    return ($script:PiperExe -and (Test-Path $script:PiperExe) -and $script:PiperModel -and (Test-Path $script:PiperModel))
+}
+
 function Set-NarrationEngine {
-    param([ValidateSet('sapi','winrt')] [string]$Engine)
+    param([ValidateSet('sapi','winrt','piper')] [string]$Engine)
     if ($Engine -eq 'winrt' -and -not $script:WinRTAvailable) {
         Write-Warning "WinRT speech unavailable on this system; using SAPI voices."
         $script:NarrationEngine = 'sapi'
+    } elseif ($Engine -eq 'piper' -and -not (Test-PiperReady)) {
+        $fallback = if ($script:WinRTAvailable) { 'winrt' } else { 'sapi' }
+        Write-Warning "Piper not set up (run Setup-Piper.ps1); falling back to '$fallback' voices."
+        $script:NarrationEngine = $fallback
     } else {
         $script:NarrationEngine = $Engine
     }
     return $script:NarrationEngine
+}
+
+# Render narration to a WAV with the Piper neural binary (offline, free). Text is
+# piped on stdin; output goes to -f. length_scale maps our rate (higher=faster).
+function Render-NarrationWavPiper {
+    param([string]$Text, [string]$Path, [int]$Rate = 0)
+    if (-not (Test-PiperReady)) { throw "Piper is not set up. Run Setup-Piper.ps1." }
+    $lengthScale = [Math]::Max(0.5, [Math]::Min(2.0, 1.0 - ($Rate / 10.0) * 0.3))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = $script:PiperExe
+    $psi.Arguments = '-m "{0}" -f "{1}" --length_scale {2}' -f $script:PiperModel, $Path, $lengthScale.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+    $psi.WorkingDirectory       = [System.IO.Path]::GetDirectoryName($script:PiperExe)  # so piper finds espeak-ng-data
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
+    $psi.RedirectStandardInput  = $true
+    $psi.RedirectStandardError  = $true
+    $psi.RedirectStandardOutput = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $p.StandardInput.WriteLine($Text)
+    $p.StandardInput.Close()
+    [void]$p.StandardOutput.ReadToEnd()
+    [void]$p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    if (-not (Test-Path $Path) -or (Get-Item $Path).Length -eq 0) { throw "Piper failed to render audio (exit $($p.ExitCode))." }
 }
 
 function Get-WinRTVoices {
@@ -227,12 +268,13 @@ function Invoke-DemoNarration {
     )
     $engine = $script:NarrationEngine
     if ($engine -eq 'winrt' -and -not $script:WinRTAvailable) { $engine = 'sapi' }
+    if ($engine -eq 'piper' -and -not (Test-PiperReady))      { $engine = if ($script:WinRTAvailable) { 'winrt' } else { 'sapi' } }
     $capturing = [bool]$script:NarrationCapture
 
-    # WinRT engine: it renders to a stream (no direct device output), so we always
-    # render a WAV and play it. Captured clips are kept for muxing; live ones are
-    # temp files cleaned up at the end.
-    if ($engine -eq 'winrt') {
+    # winrt/piper always render to a WAV (no direct device output); SAPI renders to
+    # WAV only when capturing (so it can be muxed), otherwise it speaks directly.
+    $renderToWav = ($engine -eq 'winrt') -or ($engine -eq 'piper') -or $capturing
+    if ($renderToWav) {
         if ($capturing) {
             $cap = $script:NarrationCapture; $cap.index++
             $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
@@ -240,20 +282,12 @@ function Invoke-DemoNarration {
             $wav = Join-Path ([System.IO.Path]::GetTempPath()) ("demo-narr-" + [guid]::NewGuid().ToString('N') + ".wav")
             [void]$script:TempWavs.Add($wav)
         }
-        Render-NarrationWavWinRT -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
+        switch ($engine) {
+            'piper' { Render-NarrationWavPiper -Text $Text -Path $wav -Rate $Rate }
+            'winrt' { Render-NarrationWavWinRT  -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
+            default { Render-NarrationWav        -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
+        }
         if ($capturing) { [void]$cap.clips.Add(@{ file = $wav; offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds }) }
-        $player = New-Object System.Media.SoundPlayer($wav)
-        if ($Wait) { $player.PlaySync(); $player.Dispose() }
-        else { [void]$script:Players.Add($player); $player.Play() }
-        return
-    }
-
-    # SAPI engine, capture mode: render to WAV, timestamp it, play it.
-    if ($capturing) {
-        $cap = $script:NarrationCapture; $cap.index++
-        $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
-        Render-NarrationWav -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
-        [void]$cap.clips.Add(@{ file = $wav; offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds })
         $player = New-Object System.Media.SoundPlayer($wav)
         if ($Wait) { $player.PlaySync(); $player.Dispose() }
         else { [void]$script:Players.Add($player); $player.Play() }
@@ -302,5 +336,5 @@ function Stop-DemoOverlays {
 }
 
 Export-ModuleMember -Function Show-DemoCaption, Invoke-DemoNarration, Get-DemoVoices, Stop-DemoOverlays, `
-    Render-NarrationWav, Render-NarrationWavWinRT, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture, `
-    Set-NarrationEngine, Get-WinRTVoices
+    Render-NarrationWav, Render-NarrationWavWinRT, Render-NarrationWavPiper, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture, `
+    Set-NarrationEngine, Set-PiperConfig, Test-PiperReady, Get-WinRTVoices
