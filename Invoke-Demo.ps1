@@ -37,12 +37,13 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)] [string]$Scenario,
+    [Parameter(Position = 0)] [string]$Scenario,
     [switch]$DryRun,
     [switch]$Validate,
     [switch]$NoRecord,
     [ValidateSet('ffmpeg','manual','none')] [string]$RecordMode,
-    [switch]$KeepController
+    [switch]$KeepController,
+    [switch]$ListVoices
 )
 
 Set-StrictMode -Version Latest
@@ -53,6 +54,19 @@ Import-Module (Join-Path $modules 'Engine.psm1')   -Force -DisableNameChecking
 Import-Module (Join-Path $modules 'Overlay.psm1')  -Force -DisableNameChecking
 Import-Module (Join-Path $modules 'Recorder.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $modules 'Scenario.psm1') -Force -DisableNameChecking
+
+# --- List voices and exit (helper for choosing narration.voice) -------------
+if ($ListVoices) {
+    Write-Host "WinRT voices (recommended - includes any installed Natural neural voices):" -ForegroundColor Cyan
+    $wv = Get-WinRTVoices
+    if ($wv) { $wv | ForEach-Object { Write-Host "  $_" } } else { Write-Host "  (WinRT speech unavailable on this system)" -ForegroundColor Yellow }
+    Write-Host "SAPI voices (legacy):" -ForegroundColor Cyan
+    Get-DemoVoices | ForEach-Object { Write-Host "  $_" }
+    Write-Host ""
+    Write-Host "No 'Natural' voice above? Install free ones: Settings > Accessibility > Narrator > Add natural voices." -ForegroundColor DarkGray
+    exit 0
+}
+if (-not $Scenario) { Write-Host "Specify a scenario file (or use -ListVoices)." -ForegroundColor Red; exit 1 }
 
 # --- Load + validate --------------------------------------------------------
 $scn = Read-DemoScenario -Path $Scenario
@@ -117,6 +131,9 @@ $cfg = @{
 }
 $minimize = (-not $KeepController) -and [bool](Get-Prop $settings 'minimizeControllerWindow' $true)
 $countdown = [int](Get-Prop $startup 'countdownSec' 3)
+
+# Narration engine: 'winrt' (OneCore/Natural neural voices) or 'sapi' (legacy).
+$narrEngine = Set-NarrationEngine -Engine (Get-Prop $narr 'engine' 'winrt')
 
 # Narration is baked into the video (post-mux) only when we own a recorded file.
 $narrationToVideo = ($mode -eq 'ffmpeg') -and $autoRec -and $cfg.narrationEnabled -and [bool](Get-Prop $narr 'captureToVideo' $true)

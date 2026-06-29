@@ -127,6 +127,29 @@ afterward — **no Stereo Mix or loopback device needed**. Disable with
 `narration.captureToVideo: false`. To also capture other app/system audio, set
 `recording.audioDevice` (see [docs/SCENARIO_FORMAT.md](docs/SCENARIO_FORMAT.md)).
 
+### Better-sounding voices (free, local)
+
+By default narration uses the **`winrt`** engine, which can use Windows' modern
+**Natural** neural voices — dramatically less robotic than the legacy David/Zira
+voices, and fully offline/free. They aren't installed by default:
+
+1. **Settings → Accessibility → Narrator → Add natural voices → Add**, pick e.g.
+   *Microsoft Aria (Natural)*, *Andrew*, *Ava*, *Jenny*… and install.
+   (Also under **Settings → Time & language → Speech → Manage voices**.)
+2. See what's available to the engine:
+   ```powershell
+   .\Invoke-Demo.ps1 -ListVoices
+   ```
+3. Set it in your scenario:
+   ```json
+   "narration": { "engine": "winrt", "voice": "Microsoft Aria (Natural)" }
+   ```
+
+Without a Natural voice installed, `winrt` still works using the built-in OneCore
+voices (David/Mark/Zira). Set `"engine": "sapi"` to force the legacy voices.
+Want cloud-grade voices (OpenAI/Azure/ElevenLabs) or offline Piper neural TTS?
+Those are planned — see [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ---
 
 ## How it works
@@ -173,10 +196,13 @@ Design notes:
 
 ## Roadmap
 
+Full list in **[docs/ROADMAP.md](docs/ROADMAP.md)**. Highlights:
+
+- [x] Narration baked into the video (no Stereo Mix needed)
+- [x] `winrt` narration engine (Windows Natural neural voices)
+- [ ] Cloud neural TTS (OpenAI/Azure/ElevenLabs) and offline Piper voices
 - [ ] `obs` recording mode (OBS WebSocket: scenes, webcam, overlays)
-- [x] Built-in narration→video muxing (no Stereo Mix needed)
-- [ ] Per-window capture helpers and coordinate-free UI targeting
-- [ ] `cmd`/WSL terminal presets
+- [ ] Coordinate-free UI targeting; `cmd`/WSL terminal presets
 
 ## License
 

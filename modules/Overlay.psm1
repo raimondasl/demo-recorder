@@ -20,6 +20,20 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Speech
 
+# WinRT speech reaches OneCore + installed "Natural" neural voices, which the
+# legacy System.Speech (SAPI5) API cannot see. Optional: if the WinRT projection
+# is unavailable, the engine transparently falls back to SAPI.
+$script:WinRTAvailable = $false
+$script:AsTaskOp = $null
+try {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    [void][Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media, ContentType = WindowsRuntime]
+    $script:AsTaskOp = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+        $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and
+        $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+    $script:WinRTAvailable = $true
+} catch { $script:WinRTAvailable = $false }
+
 # A Form that shows without activating and lets clicks pass through.
 if (-not ([System.Management.Automation.PSTypeName]'DemoNoActivateForm').Type) {
     Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @'
@@ -46,7 +60,9 @@ if (-not ([System.Management.Automation.PSTypeName]'DemoNoActivateForm').Type) {
 $script:CaptionJobs = New-Object System.Collections.ArrayList   # @{ ps; handle }
 $script:Synths      = New-Object System.Collections.ArrayList
 $script:Players     = New-Object System.Collections.ArrayList   # async SoundPlayers kept alive
+$script:TempWavs    = New-Object System.Collections.ArrayList   # live-only WinRT WAVs to clean up
 $script:NarrationCapture = $null   # when set, narration is rendered to WAV + timestamped for muxing
+$script:NarrationEngine  = 'sapi'  # 'sapi' | 'winrt'; set via Set-NarrationEngine
 
 # The work each caption runspace performs. Kept as a scriptblock so it can be
 # pushed into an STA runspace.
@@ -115,6 +131,62 @@ function Show-DemoCaption {
     }
 }
 
+# Block on a WinRT IAsyncOperation<T> and return its result (PowerShell can't await).
+function Await {
+    param($Operation, [type]$ResultType)
+    $task = $script:AsTaskOp.MakeGenericMethod($ResultType).Invoke($null, @($Operation))
+    [void]$task.Wait(-1)
+    return $task.Result
+}
+
+function Set-NarrationEngine {
+    param([ValidateSet('sapi','winrt')] [string]$Engine)
+    if ($Engine -eq 'winrt' -and -not $script:WinRTAvailable) {
+        Write-Warning "WinRT speech unavailable on this system; using SAPI voices."
+        $script:NarrationEngine = 'sapi'
+    } else {
+        $script:NarrationEngine = $Engine
+    }
+    return $script:NarrationEngine
+}
+
+function Get-WinRTVoices {
+    if (-not $script:WinRTAvailable) { return @() }
+    return ([Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | ForEach-Object { $_.DisplayName })
+}
+
+# Render narration to a PCM WAV using the WinRT synth (OneCore / Natural voices).
+# Voice matching is tolerant: exact DisplayName, else a fuzzy match that also
+# accepts legacy "... Desktop" names (so existing scenarios keep working).
+function Render-NarrationWavWinRT {
+    param([string]$Text, [string]$Path, [string]$Voice, [int]$Rate = 0, [int]$Volume = 100)
+    if (-not $script:WinRTAvailable) { throw "WinRT speech is not available on this system." }
+    $synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+    try {
+        if ($Voice) {
+            $req = $Voice.Trim()
+            $all = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
+            $v = $all | Where-Object { $_.DisplayName -eq $req } | Select-Object -First 1
+            if (-not $v) {
+                $reqN = ($req -replace '\s*Desktop$', '')
+                $v = $all | Where-Object { $_.DisplayName -eq $reqN -or $_.DisplayName -like "*$reqN*" -or $reqN -like "*$($_.DisplayName)*" } | Select-Object -First 1
+            }
+            if ($v) { $synth.Voice = $v } else { Write-Warning "WinRT voice '$Voice' not found; using default ($($synth.Voice.DisplayName))." }
+        }
+        try {
+            $synth.Options.SpeakingRate = [Math]::Max(0.5, [Math]::Min(2.0, 1.0 + ($Rate / 10.0) * 0.5))
+            $synth.Options.AudioVolume  = [Math]::Max(0.0, [Math]::Min(1.0, $Volume / 100.0))
+        } catch {}
+        $op = $synth.SynthesizeTextToStreamAsync($Text)
+        $stream = Await $op ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+        $net = [System.IO.WindowsRuntimeStreamExtensions]::AsStream($stream)
+        $fs = [System.IO.File]::Create($Path)
+        try { $net.CopyTo($fs) } finally { $fs.Dispose(); $net.Dispose(); $stream.Dispose() }
+    } finally {
+        $synth.Dispose()
+    }
+}
+
 # Render narration to a PCM WAV file. SAPI locks the file until output is reset,
 # so we reset to null and dispose before returning (per System.Speech guidance).
 function Render-NarrationWav {
@@ -153,24 +225,42 @@ function Invoke-DemoNarration {
         [int]$Volume = 100,    # 0 .. 100
         [switch]$Wait
     )
-    # Capture mode: render to WAV, record the offset from recording start, and
-    # play the rendered clip live (so the operator hears it and the demo paces
-    # naturally). The WAV is muxed into the video after recording stops.
-    if ($script:NarrationCapture) {
-        $cap = $script:NarrationCapture
-        $cap.index++
-        $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
-        Render-NarrationWav -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
-        $offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds
-        [void]$cap.clips.Add(@{ file = $wav; offsetMs = $offsetMs })
+    $engine = $script:NarrationEngine
+    if ($engine -eq 'winrt' -and -not $script:WinRTAvailable) { $engine = 'sapi' }
+    $capturing = [bool]$script:NarrationCapture
+
+    # WinRT engine: it renders to a stream (no direct device output), so we always
+    # render a WAV and play it. Captured clips are kept for muxing; live ones are
+    # temp files cleaned up at the end.
+    if ($engine -eq 'winrt') {
+        if ($capturing) {
+            $cap = $script:NarrationCapture; $cap.index++
+            $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
+        } else {
+            $wav = Join-Path ([System.IO.Path]::GetTempPath()) ("demo-narr-" + [guid]::NewGuid().ToString('N') + ".wav")
+            [void]$script:TempWavs.Add($wav)
+        }
+        Render-NarrationWavWinRT -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
+        if ($capturing) { [void]$cap.clips.Add(@{ file = $wav; offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds }) }
         $player = New-Object System.Media.SoundPlayer($wav)
         if ($Wait) { $player.PlaySync(); $player.Dispose() }
         else { [void]$script:Players.Add($player); $player.Play() }
         return
     }
 
-    # Live-only mode (manual/none recording, or capture disabled): speak to the
-    # default audio device.
+    # SAPI engine, capture mode: render to WAV, timestamp it, play it.
+    if ($capturing) {
+        $cap = $script:NarrationCapture; $cap.index++
+        $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
+        Render-NarrationWav -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
+        [void]$cap.clips.Add(@{ file = $wav; offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds })
+        $player = New-Object System.Media.SoundPlayer($wav)
+        if ($Wait) { $player.PlaySync(); $player.Dispose() }
+        else { [void]$script:Players.Add($player); $player.Play() }
+        return
+    }
+
+    # SAPI engine, live-only mode (manual/none recording): speak to the device.
     $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
     if ($Voice) { try { $synth.SelectVoice($Voice) } catch { Write-Warning "Voice '$Voice' not found; using default." } }
     $synth.Rate   = [Math]::Max(-10, [Math]::Min(10, $Rate))
@@ -207,7 +297,10 @@ function Stop-DemoOverlays {
         try { $p.Dispose() } catch {}
     }
     $script:Players.Clear()
+    foreach ($w in $script:TempWavs) { try { Remove-Item $w -Force -ErrorAction SilentlyContinue } catch {} }
+    $script:TempWavs.Clear()
 }
 
 Export-ModuleMember -Function Show-DemoCaption, Invoke-DemoNarration, Get-DemoVoices, Stop-DemoOverlays, `
-    Render-NarrationWav, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture
+    Render-NarrationWav, Render-NarrationWavWinRT, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture, `
+    Set-NarrationEngine, Get-WinRTVoices

@@ -43,8 +43,9 @@ sensible default.
 | | `stepPauseMs` | `800` | Pause after each step. |
 | | `shell` | `powershell` | Default shell for `run`. |
 | `narration` | `enabled` | `true` | Spoken narration on/off. |
+| | `engine` | `winrt` | `winrt` = OneCore + installed **Natural** neural voices (far better); `sapi` = legacy David/Zira. Falls back to `sapi` if WinRT is unavailable. |
 | | `captureToVideo` | `true` | With ffmpeg recording, bake narration into the MP4 (rendered to WAV + muxed at the right time; no Stereo Mix needed). |
-| | `voice` | _default_ | e.g. `Microsoft Zira Desktop`, `Microsoft David Desktop`. |
+| | `voice` | _default_ | Voice display name — list with `Invoke-Demo.ps1 -ListVoices`. e.g. `Microsoft Aria (Natural)`, `Microsoft Zira`. |
 | | `rate` / `volume` | `0` / `100` | Speech rate (-10..10), volume (0..100). |
 | `captions` | `enabled` | `true` | On-screen captions on/off. |
 | | `position` | `bottom` | `top` / `center` / `bottom`. |

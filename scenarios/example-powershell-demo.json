@@ -16,7 +16,7 @@
       "stepPauseMs": 1000,
       "shell": "powershell"
     },
-    "narration": { "enabled": true, "voice": "Microsoft Zira Desktop", "rate": 0 },
+    "narration": { "enabled": true, "engine": "winrt", "voice": "Microsoft Zira", "rate": 0 },
     "captions": { "enabled": true, "position": "bottom", "fontSize": 28 },
     "startup": { "countdownSec": 3 }
   },

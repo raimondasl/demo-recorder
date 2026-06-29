@@ -54,8 +54,9 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
+            "engine": { "enum": ["winrt", "sapi"], "default": "winrt", "description": "winrt = OneCore + installed 'Natural' neural voices (much better); sapi = legacy David/Zira voices. Falls back to sapi if WinRT is unavailable." },
             "captureToVideo": { "type": "boolean", "default": true, "description": "When recording with ffmpeg, render each narration line to WAV and mux it into the video at the right time (no Stereo Mix needed). If false, narration is only heard live." },
-            "voice": { "type": "string", "description": "e.g. 'Microsoft Zira Desktop' or 'Microsoft David Desktop'. Omit for default." },
+            "voice": { "type": "string", "description": "Voice display name. List options with: Invoke-Demo.ps1 -ListVoices. e.g. 'Microsoft Aria (Natural)', 'Microsoft Andrew (Natural)', or 'Microsoft Zira'." },
             "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
             "volume": { "type": "integer", "default": 100, "minimum": 0, "maximum": 100 }
           }
