@@ -134,17 +134,24 @@ free, offline, no API key — use the **`piper`** engine. One-time setup downloa
 small self-contained binary (no Python) and a voice model:
 
 ```powershell
-.\Setup-Piper.ps1                 # downloads tools/piper + voices/en_US-lessac-medium
-.\Setup-Piper.ps1 -Voice en_US-ryan-medium   # or pick another voice
+.\Setup-Piper.ps1                            # default: en_US-lessac-medium (lighter/faster)
+.\Setup-Piper.ps1 -Voice en_US-ryan-high     # best-quality male
+.\Setup-Piper.ps1 -Voice en_US-lessac-high   # best-quality neutral
 ```
 
 Then set the engine in your scenario:
 ```json
 "narration": { "engine": "piper" }
 ```
-The `piper.exe` and model paths are auto-detected; override with
-`"piper": { "model": "voices/en_US-ryan-medium.onnx" }`. Browse voices at
-[rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
+The `piper.exe` and model paths are auto-detected (they default to the
+`en_US-lessac-medium` you installed first); to use a different voice, point at it:
+```json
+"narration": { "engine": "piper", "piper": { "model": "voices/en_US-ryan-high.onnx" } }
+```
+**Quality tiers:** `high` > `medium` > `low`. `high` models (~110 MB) sound best
+but render a bit slower; `medium` (~60 MB) is a good balance. Listen to every
+voice at the official [samples page](https://rhasspy.github.io/piper-samples/),
+then browse files at [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
 
 **Engine options** (`narration.engine`):
 - **`piper`** — offline neural, best quality, free. Needs `Setup-Piper.ps1`.
