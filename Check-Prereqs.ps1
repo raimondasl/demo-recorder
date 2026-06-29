@@ -39,15 +39,19 @@ try {
 
 # ffmpeg (optional - for automated recording)
 $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
-if (-not $ff) {
+# Normalize to a path string: Get-Command yields a CommandInfo (.Source), the
+# winget-path probe yields a FileInfo (.FullName). Mixing them broke `& $ff.Source`.
+$onPath = [bool]$ff
+$ffPath = if ($ff) { $ff.Source } else { $null }
+if (-not $ffPath) {
     $guess = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($guess) { $ff = $guess }
+    if ($guess) { $ffPath = $guess.FullName }
 }
-if ($ff) {
-    $ver = (& $ff.Source -version 2>$null | Select-Object -First 1)
-    Add-OK "ffmpeg found: $($ff.Source)"
+if ($ffPath) {
+    $ver = (& $ffPath -version 2>$null | Select-Object -First 1)
+    Add-OK "ffmpeg found: $ffPath"
     if ($ver) { Write-Host "         $ver" -ForegroundColor DarkGray }
-    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    if (-not $onPath) {
         Add-Warn "ffmpeg is installed but not on PATH for this session. Open a new terminal, or the engine will auto-locate it."
     }
 } else {
@@ -68,5 +72,5 @@ else { Add-Warn "Clipchamp not found - any screen recorder works in manual mode.
 
 Write-Host ("-" * 50)
 Write-Host "Ready to record automatically: " -NoNewline
-if ($ff) { Write-Host "YES (ffmpeg mode)" -ForegroundColor Green }
+if ($ffPath) { Write-Host "YES (ffmpeg mode)" -ForegroundColor Green }
 else     { Write-Host "Manual mode only (install ffmpeg for hands-off recording)" -ForegroundColor Yellow }
