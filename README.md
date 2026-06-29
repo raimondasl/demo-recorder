@@ -135,7 +135,7 @@ small self-contained binary (no Python) and a voice model:
 
 ```powershell
 .\Setup-Piper.ps1                 # downloads tools/piper + voices/en_US-lessac-medium
-.\Setup-Piper.ps1 -Voice en_US-ryan-high   # or pick another voice
+.\Setup-Piper.ps1 -Voice en_US-ryan-medium   # or pick another voice
 ```
 
 Then set the engine in your scenario:
@@ -143,7 +143,7 @@ Then set the engine in your scenario:
 "narration": { "engine": "piper" }
 ```
 The `piper.exe` and model paths are auto-detected; override with
-`"piper": { "model": "voices/en_US-ryan-high.onnx" }`. Browse voices at
+`"piper": { "model": "voices/en_US-ryan-medium.onnx" }`. Browse voices at
 [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
 
 **Engine options** (`narration.engine`):

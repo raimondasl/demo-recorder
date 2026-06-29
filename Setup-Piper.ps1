@@ -9,7 +9,7 @@
 .PARAMETER Voice
   Piper voice name, formatted <locale>-<name>-<quality> (default en_US-lessac-medium).
   Browse options at https://huggingface.co/rhasspy/piper-voices (e.g.
-  en_US-ryan-high, en_US-amy-medium, en_GB-alba-medium).
+  en_US-ryan-medium, en_US-amy-medium, en_GB-alba-medium).
 
 .PARAMETER Force
   Re-download even if files already exist.
@@ -17,7 +17,7 @@
 .EXAMPLE
   .\Setup-Piper.ps1
 .EXAMPLE
-  .\Setup-Piper.ps1 -Voice en_US-ryan-high
+  .\Setup-Piper.ps1 -Voice en_US-ryan-medium
 #>
 [CmdletBinding()]
 param([string]$Voice = 'en_US-lessac-medium', [switch]$Force)
