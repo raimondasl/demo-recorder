@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Minimal smoke test",
+  "description": "Tiny scenario to confirm the engine types into a terminal and records.",
+  "settings": {
+    "recording": { "mode": "ffmpeg", "fileName": "smoke" },
+    "defaults": { "typeStyle": "human", "stepPauseMs": 700 }
+  },
+  "steps": [
+    { "action": "caption", "text": "Demo recorder smoke test", "durationMs": 2500, "wait": true },
+    { "action": "run", "command": "Write-Host 'Hello from the demo recorder' -ForegroundColor Green", "caption": "Open PowerShell and say hello" },
+    { "action": "run", "command": "Get-Date", "caption": "Show the current time", "waitMs": 1200 },
+    { "action": "caption", "text": "It works!", "durationMs": 2500, "wait": true }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/raimondasl/demo-recorder/scenario.schema.json",
+  "title": "Demo Recorder Scenario",
+  "description": "A scenario describes an automated software demo on Windows: which apps to open, which CLI commands to type, what to say/caption, and how to record it.",
+  "type": "object",
+  "required": ["name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string", "default": "1.0" },
+    "name": { "type": "string", "description": "Short title of the demo." },
+    "description": { "type": "string", "description": "One or two sentences about what the demo shows." },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recording": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["ffmpeg", "manual", "none", "obs"], "default": "ffmpeg", "description": "ffmpeg = automated capture; manual = you start/stop Clipchamp; none = no video; obs = reserved for a later phase." },
+            "auto": { "type": "boolean", "default": true, "description": "If true, the whole scenario is recorded automatically. If false, use explicit record steps." },
+            "outputDir": { "type": "string", "default": "recordings", "description": "Folder for video/screenshots (relative to the project root)." },
+            "fileName": { "type": "string", "default": "demo", "description": "Base name; a timestamp and .mp4 are appended." },
+            "framerate": { "type": "integer", "default": 30, "minimum": 5, "maximum": 60 },
+            "crf": { "type": "integer", "default": 23, "minimum": 0, "maximum": 51, "description": "x264 quality; lower = better/bigger. 18-24 is sensible." },
+            "preset": { "type": "string", "default": "veryfast", "description": "x264 speed/efficiency preset." },
+            "captureCursor": { "type": "boolean", "default": true },
+            "region": {
+              "type": "object",
+              "description": "Capture only part of the screen, or a window by title. Omit to capture the full primary display.",
+              "additionalProperties": false,
+              "properties": {
+                "x": { "type": "integer" }, "y": { "type": "integer" },
+                "width": { "type": "integer" }, "height": { "type": "integer" },
+                "window": { "type": "string", "description": "Exact window title to capture instead of a rectangle." }
+              }
+            },
+            "audioDevice": { "type": "string", "description": "Optional dshow device (e.g. 'Stereo Mix (Realtek(R) Audio)') to capture system/narration audio into the video." }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "typeStyle": { "enum": ["human", "instant"], "default": "human", "description": "human = char-by-char (watchable); instant = paste-speed." },
+            "typeDelayMs": { "type": "integer", "default": 30, "description": "Per-character delay for human typing." },
+            "stepPauseMs": { "type": "integer", "default": 800, "description": "Pause inserted after each step." },
+            "shell": { "enum": ["powershell", "cmd"], "default": "powershell" }
+          }
+        },
+        "narration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "voice": { "type": "string", "description": "e.g. 'Microsoft Zira Desktop' or 'Microsoft David Desktop'. Omit for default." },
+            "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
+            "volume": { "type": "integer", "default": 100, "minimum": 0, "maximum": 100 }
+          }
+        },
+        "captions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "position": { "enum": ["top", "center", "bottom"], "default": "bottom" },
+            "fontSize": { "type": "integer", "default": 28 },
+            "defaultDurationMs": { "type": "integer", "default": 3500 }
+          }
+        },
+        "startup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "countdownSec": { "type": "integer", "default": 3 } }
+        },
+        "minimizeControllerWindow": { "type": "boolean", "default": true, "description": "Minimize the script's own console while recording so it is not on screen." }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/step" }
+    }
+  },
+  "definitions": {
+    "step": {
+      "type": "object",
+      "required": ["action"],
+      "properties": {
+        "id": { "type": "string", "description": "Optional human-readable id." },
+        "comment": { "type": "string", "description": "Ignored at runtime; for readability." },
+        "action": { "enum": ["wait","caption","narrate","launch","run","type","keys","focus","window","click","screenshot","record","marker","prompt"] },
+        "caption": { "type": "string", "description": "Shorthand: show this caption (non-blocking) alongside the step." },
+        "say": { "type": "string", "description": "Shorthand: narrate this line (non-blocking) alongside the step." },
+        "pauseAfterMs": { "type": "integer", "description": "Override the default pause after this step." },
+
+        "seconds": { "type": "number", "description": "wait: pause in seconds." },
+        "ms": { "type": "integer", "description": "wait: pause in milliseconds." },
+
+        "text": { "type": "string", "description": "caption/narrate/type: the text." },
+        "durationMs": { "type": "integer", "description": "caption: how long to show." },
+        "position": { "enum": ["top","center","bottom"], "description": "caption position." },
+        "fontSize": { "type": "integer", "description": "caption font size." },
+        "wait": { "type": "boolean", "description": "caption/narrate: block until done." },
+        "voice": { "type": "string" }, "rate": { "type": "integer" }, "volume": { "type": "integer" },
+
+        "app": { "type": "string", "description": "launch: executable or app (e.g. 'notepad', 'powershell', a full path)." },
+        "args": { "type": "array", "items": { "type": "string" }, "description": "launch: arguments." },
+        "as": { "type": "string", "description": "launch/run/focus/window: a name to remember this window by." },
+        "windowState": { "enum": ["normal","maximized","minimized"], "description": "launch: initial window state." },
+
+        "command": { "type": "string", "description": "run: the CLI command to type into a visible terminal." },
+        "shell": { "enum": ["powershell","cmd"], "description": "run: which shell." },
+        "newWindow": { "type": "boolean", "description": "run: open a fresh terminal instead of reusing the current one." },
+        "submit": { "type": "boolean", "description": "run/type: press Enter after typing (run defaults true, type defaults false)." },
+        "typeStyle": { "enum": ["human","instant"] },
+        "typeDelayMs": { "type": "integer" },
+        "waitMs": { "type": "integer", "description": "run: pause after submitting, to let output appear." },
+
+        "keys": { "description": "keys: a chord string or array, e.g. 'Ctrl+Shift+Esc', ['Down','Down','Enter'].", "oneOf": [ { "type": "string" }, { "type": "array", "items": { "type": "string" } } ] },
+        "count": { "type": "integer", "description": "keys: repeat the sequence N times." },
+        "intervalMs": { "type": "integer", "description": "keys: delay between key presses." },
+
+        "title": { "type": "string" }, "titleContains": { "type": "string" }, "processName": { "type": "string" },
+        "state": { "enum": ["normal","maximized","minimized"] },
+        "x": { "type": "integer" }, "y": { "type": "integer" }, "width": { "type": "integer" }, "height": { "type": "integer" },
+        "button": { "enum": ["left","right","double"], "description": "click: mouse button." },
+
+        "path": { "type": "string", "description": "screenshot: output path (defaults under outputDir)." },
+        "region": {
+          "type": "object",
+          "properties": { "x": {"type":"integer"}, "y": {"type":"integer"}, "width": {"type":"integer"}, "height": {"type":"integer"} },
+          "description": "screenshot: region to capture."
+        },
+
+        "op": { "enum": ["start","stop"], "description": "record: start/stop capture (only when settings.recording.auto = false)." },
+        "label": { "type": "string", "description": "marker: a structural label printed to the console log." },
+        "message": { "type": "string", "description": "prompt: text shown while pausing for the operator to press Enter." }
+      }
+    }
+  }
+}

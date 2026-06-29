@@ -1,0 +1,20 @@
+# Recorded output
+recordings/
+*.mp4
+*.mkv
+*.ffmpeg.log
+
+# Screenshots produced by demos
+*.png
+!docs/**/*.png
+
+# Windows / editor cruft
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/
+*.user
+
+# Temp
+*.tmp
+scratch/

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Git CLI quick-start demo",
+  "description": "A safe, self-contained walkthrough: create a temp project, make a file, and put it under version control with git. Everything happens in a temp folder and is cleaned up at the end.",
+  "settings": {
+    "recording": {
+      "mode": "ffmpeg",
+      "outputDir": "recordings",
+      "fileName": "git-cli-demo",
+      "framerate": 30,
+      "crf": 23
+    },
+    "defaults": {
+      "typeStyle": "human",
+      "typeDelayMs": 28,
+      "stepPauseMs": 1000,
+      "shell": "powershell"
+    },
+    "narration": { "enabled": true, "voice": "Microsoft Zira Desktop", "rate": 0 },
+    "captions": { "enabled": true, "position": "bottom", "fontSize": 28 },
+    "startup": { "countdownSec": 3 }
+  },
+  "steps": [
+    { "action": "caption", "text": "Git quick-start, from the command line", "durationMs": 3000, "position": "center", "wait": true },
+    { "action": "narrate", "text": "In this short demo we create a project and put it under version control using git." },
+
+    { "action": "marker", "label": "Set up a temp workspace" },
+    { "action": "run",
+      "command": "$demo = Join-Path $env:TEMP 'demo-recorder-sample'; if (Test-Path $demo) { Remove-Item $demo -Recurse -Force }; New-Item -ItemType Directory -Path $demo | Out-Null; Set-Location $demo; \"Working in $demo\"",
+      "caption": "Create a clean temp project folder",
+      "say": "First, a clean working folder in the temp directory.",
+      "waitMs": 1200 },
+
+    { "action": "run", "command": "$PSVersionTable.PSVersion", "caption": "Check the PowerShell version", "waitMs": 900 },
+
+    { "action": "marker", "label": "Create a file" },
+    { "action": "run",
+      "command": "Set-Content -Path readme.md -Value \"# Demo Project`nCreated by the demo recorder.\"; Get-Content readme.md",
+      "caption": "Create and show a README",
+      "say": "Now we add a small README file.",
+      "waitMs": 1200 },
+
+    { "action": "marker", "label": "Put it under version control" },
+    { "action": "run", "command": "git init", "caption": "Initialize a git repository", "say": "Let's initialize a git repository.", "waitMs": 1200 },
+    { "action": "run", "command": "git add .", "caption": "Stage the files" },
+    { "action": "run",
+      "command": "git -c user.name='Demo User' -c user.email='demo@example.com' commit -m 'Initial commit'",
+      "caption": "Make the first commit",
+      "say": "And commit it as the first version.",
+      "waitMs": 1500 },
+    { "action": "run", "command": "git log --oneline --decorate", "caption": "Review the history", "waitMs": 1200 },
+
+    { "action": "marker", "label": "Clean up" },
+    { "action": "run",
+      "command": "Set-Location $env:USERPROFILE; Remove-Item $demo -Recurse -Force; 'Cleaned up.'",
+      "caption": "Remove the temp project",
+      "say": "Finally, we clean everything up.",
+      "waitMs": 1000 },
+
+    { "action": "caption", "text": "That's the git quick-start. Thanks for watching!", "durationMs": 3500, "position": "center", "wait": true }
+  ]
+}
