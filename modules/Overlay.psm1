@@ -45,6 +45,8 @@ if (-not ([System.Management.Automation.PSTypeName]'DemoNoActivateForm').Type) {
 
 $script:CaptionJobs = New-Object System.Collections.ArrayList   # @{ ps; handle }
 $script:Synths      = New-Object System.Collections.ArrayList
+$script:Players     = New-Object System.Collections.ArrayList   # async SoundPlayers kept alive
+$script:NarrationCapture = $null   # when set, narration is rendered to WAV + timestamped for muxing
 
 # The work each caption runspace performs. Kept as a scriptblock so it can be
 # pushed into an STA runspace.
@@ -113,6 +115,36 @@ function Show-DemoCaption {
     }
 }
 
+# Render narration to a PCM WAV file. SAPI locks the file until output is reset,
+# so we reset to null and dispose before returning (per System.Speech guidance).
+function Render-NarrationWav {
+    param([string]$Text, [string]$Path, [string]$Voice, [int]$Rate = 0, [int]$Volume = 100)
+    $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    try {
+        if ($Voice) { try { $synth.SelectVoice($Voice) } catch { Write-Warning "Voice '$Voice' not found; using default." } }
+        $synth.Rate   = [Math]::Max(-10, [Math]::Min(10, $Rate))
+        $synth.Volume = [Math]::Max(0, [Math]::Min(100, $Volume))
+        $synth.SetOutputToWaveFile($Path)
+        $synth.Speak($Text)
+    } finally {
+        try { $synth.SetOutputToNull() } catch {}
+        $synth.Dispose()
+    }
+}
+
+# Begin capturing narration to timestamped WAV clips (for later muxing into the
+# video). $Stopwatch must be started at recording-start so offsets line up.
+function Initialize-NarrationCapture {
+    param([string]$Dir, [System.Diagnostics.Stopwatch]$Stopwatch)
+    if (-not (Test-Path $Dir)) { New-Item -ItemType Directory -Path $Dir -Force | Out-Null }
+    $script:NarrationCapture = @{ dir = $Dir; sw = $Stopwatch; clips = (New-Object System.Collections.ArrayList); index = 0 }
+}
+function Get-NarrationClips {
+    if ($script:NarrationCapture) { return @($script:NarrationCapture.clips) }
+    return @()
+}
+function Clear-NarrationCapture { $script:NarrationCapture = $null }
+
 function Invoke-DemoNarration {
     param(
         [string]$Text,
@@ -121,6 +153,24 @@ function Invoke-DemoNarration {
         [int]$Volume = 100,    # 0 .. 100
         [switch]$Wait
     )
+    # Capture mode: render to WAV, record the offset from recording start, and
+    # play the rendered clip live (so the operator hears it and the demo paces
+    # naturally). The WAV is muxed into the video after recording stops.
+    if ($script:NarrationCapture) {
+        $cap = $script:NarrationCapture
+        $cap.index++
+        $wav = Join-Path $cap.dir ("narr-{0:D3}.wav" -f $cap.index)
+        Render-NarrationWav -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume
+        $offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds
+        [void]$cap.clips.Add(@{ file = $wav; offsetMs = $offsetMs })
+        $player = New-Object System.Media.SoundPlayer($wav)
+        if ($Wait) { $player.PlaySync(); $player.Dispose() }
+        else { [void]$script:Players.Add($player); $player.Play() }
+        return
+    }
+
+    # Live-only mode (manual/none recording, or capture disabled): speak to the
+    # default audio device.
     $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
     if ($Voice) { try { $synth.SelectVoice($Voice) } catch { Write-Warning "Voice '$Voice' not found; using default." } }
     $synth.Rate   = [Math]::Max(-10, [Math]::Min(10, $Rate))
@@ -152,6 +202,12 @@ function Stop-DemoOverlays {
         try { $s.Dispose() } catch {}
     }
     $script:Synths.Clear()
+    foreach ($p in $script:Players) {
+        try { $p.Stop() } catch {}
+        try { $p.Dispose() } catch {}
+    }
+    $script:Players.Clear()
 }
 
-Export-ModuleMember -Function Show-DemoCaption, Invoke-DemoNarration, Get-DemoVoices, Stop-DemoOverlays
+Export-ModuleMember -Function Show-DemoCaption, Invoke-DemoNarration, Get-DemoVoices, Stop-DemoOverlays, `
+    Render-NarrationWav, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture

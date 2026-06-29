@@ -161,4 +161,64 @@ function Stop-DemoRecording {
     }
 }
 
-Export-ModuleMember -Function Test-FfmpegAvailable, Start-DemoRecording, Stop-DemoRecording
+# Overlay timestamped narration WAV clips onto a (silent) captured video.
+# Each clip is delayed to its offset and all clips are mixed into one audio
+# track; the video stream is copied (no re-encode), so this is fast and lossless.
+# On success the original file is replaced in place; on failure the silent video
+# is kept and a warning is emitted.
+function Add-NarrationToVideo {
+    param([string]$VideoFile, [object[]]$Clips, [string]$FfmpegPath)
+    if (-not $Clips -or $Clips.Count -eq 0) { return $VideoFile }
+    if (-not (Test-Path $VideoFile)) { Write-Warning "Video not found for narration mux: $VideoFile"; return $VideoFile }
+    $ff = if ($FfmpegPath) { $FfmpegPath } else { Test-FfmpegAvailable }
+    if (-not $ff) { Write-Warning "ffmpeg not found; leaving the video without narration."; return $VideoFile }
+
+    $dir  = [System.IO.Path]::GetDirectoryName($VideoFile)
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($VideoFile)
+    $tmp  = Join-Path $dir ($stem + '.narrated.mp4')
+    $log  = Join-Path $dir ($stem + '.mux.log')
+
+    # Build: -i video -i clip1 -i clip2 ... -filter_complex "<delays>;<mix>" ...
+    $ffArgs = New-Object System.Collections.ArrayList
+    [void]$ffArgs.AddRange(@('-y', '-i', $VideoFile))
+    foreach ($c in $Clips) { [void]$ffArgs.AddRange(@('-i', $c.file)) }
+
+    $chains = New-Object System.Collections.ArrayList
+    for ($i = 0; $i -lt $Clips.Count; $i++) {
+        $off = [int]$Clips[$i].offsetMs
+        [void]$chains.Add(("[{0}:a]adelay=delays={1}:all=1[a{0}]" -f ($i + 1), $off))
+    }
+    $mixIn  = ((1..$Clips.Count) | ForEach-Object { "[a$_]" }) -join ''
+    $filter = ($chains -join ';') + ';' + $mixIn + ("amix=inputs={0}:normalize=0[aout]" -f $Clips.Count)
+
+    [void]$ffArgs.AddRange(@(
+        '-filter_complex', $filter,
+        '-map', '0:v', '-map', '[aout]',
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', '+faststart', $tmp
+    ))
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = $ff
+    # Only spaces require quoting for CommandLineToArgvW; the filter graph has none.
+    $psi.Arguments = ($ffArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
+    $psi.RedirectStandardError  = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $err  = $proc.StandardError.ReadToEnd()   # drain fully (blocks until exit) - no deadlock
+    $proc.WaitForExit()
+    Set-Content -Path $log -Value $err -Encoding UTF8
+
+    if ($proc.ExitCode -ne 0 -or -not (Test-Path $tmp)) {
+        Write-Warning "Narration mux failed (ffmpeg exit $($proc.ExitCode)); keeping silent video. See $log"
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+        return $VideoFile
+    }
+    Remove-Item $VideoFile -Force
+    Rename-Item -Path $tmp -NewName ([System.IO.Path]::GetFileName($VideoFile))
+    Remove-Item $log -Force -ErrorAction SilentlyContinue
+    return $VideoFile
+}
+
+Export-ModuleMember -Function Test-FfmpegAvailable, Start-DemoRecording, Stop-DemoRecording, Add-NarrationToVideo

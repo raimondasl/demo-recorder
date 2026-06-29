@@ -119,12 +119,13 @@ Override at the command line without editing the scenario:
 .\Invoke-Demo.ps1 .\scenarios\my-demo.json -NoRecord
 ```
 
-### Capturing narration into the video
+### Narration is baked into the video
 
-ffmpeg records video only. To bake the spoken narration into the MP4, enable a
-loopback audio device and set `recording.audioDevice` — see the "Narration in the
-video" section of [docs/SCENARIO_FORMAT.md](docs/SCENARIO_FORMAT.md). Captions are
-always captured regardless.
+Spoken narration is included in the MP4 automatically (ffmpeg mode): each line is
+rendered to a WAV, timestamped against recording start, and muxed onto the video
+afterward — **no Stereo Mix or loopback device needed**. Disable with
+`narration.captureToVideo: false`. To also capture other app/system audio, set
+`recording.audioDevice` (see [docs/SCENARIO_FORMAT.md](docs/SCENARIO_FORMAT.md)).
 
 ---
 
@@ -173,7 +174,7 @@ Design notes:
 ## Roadmap
 
 - [ ] `obs` recording mode (OBS WebSocket: scenes, webcam, overlays)
-- [ ] Built-in narration→video muxing (no Stereo Mix needed)
+- [x] Built-in narration→video muxing (no Stereo Mix needed)
 - [ ] Per-window capture helpers and coordinate-free UI targeting
 - [ ] `cmd`/WSL terminal presets
 

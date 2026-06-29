@@ -54,6 +54,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
+            "captureToVideo": { "type": "boolean", "default": true, "description": "When recording with ffmpeg, render each narration line to WAV and mux it into the video at the right time (no Stereo Mix needed). If false, narration is only heard live." },
             "voice": { "type": "string", "description": "e.g. 'Microsoft Zira Desktop' or 'Microsoft David Desktop'. Omit for default." },
             "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10 },
             "volume": { "type": "integer", "default": 100, "minimum": 0, "maximum": 100 }

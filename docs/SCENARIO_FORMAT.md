@@ -43,6 +43,7 @@ sensible default.
 | | `stepPauseMs` | `800` | Pause after each step. |
 | | `shell` | `powershell` | Default shell for `run`. |
 | `narration` | `enabled` | `true` | Spoken narration on/off. |
+| | `captureToVideo` | `true` | With ffmpeg recording, bake narration into the MP4 (rendered to WAV + muxed at the right time; no Stereo Mix needed). |
 | | `voice` | _default_ | e.g. `Microsoft Zira Desktop`, `Microsoft David Desktop`. |
 | | `rate` / `volume` | `0` / `100` | Speech rate (-10..10), volume (0..100). |
 | `captions` | `enabled` | `true` | On-screen captions on/off. |
@@ -127,26 +128,35 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
 
 - **`run` reuses one terminal** across steps unless you pass `newWindow: true` or
   a different `as`. So a sequence of `run` steps reads like a real session.
-- **Captions are always in the video; narration is only heard live** unless you
-  capture an audio device (next section). Put anything essential to understanding
-  in a `caption`.
+- **Captions and narration are both in the video.** Captions are recorded as
+  pixels; narration is rendered to WAV during the run and muxed into the MP4
+  afterward (default `narration.captureToVideo: true`, ffmpeg mode). No Stereo
+  Mix or loopback device is needed. Set `captureToVideo: false` to only hear it
+  live (e.g. manual recording).
 - **Prefer `keys`/`run`/`type` over `click`.** Coordinates break across screen
   resolutions; keyboard-driven steps are portable.
 - **Give windows an `as` name** when you will `focus`/`window` them later.
 - **Timing:** the global `stepPauseMs` plus per-step `waitMs`/`pauseAfterMs` set
   the rhythm. Slow demos read better than fast ones.
 
-### Narration in the video (optional)
+### Narration in the video
 
-`ffmpeg` captures video only. To record the spoken narration **into** the MP4,
-enable a loopback audio device and set `recording.audioDevice`:
+By default (ffmpeg mode), narration **is** in the MP4. Each `narrate`/`say` line
+is rendered to a WAV with the chosen voice, timestamped relative to recording
+start, and muxed onto the video afterward (`adelay` + `amix`, video stream copied
+— fast and lossless). No Stereo Mix, loopback, or virtual cable is required. The
+engine cleans up the temporary WAVs automatically.
+
+Set `narration.captureToVideo: false` to disable muxing and only hear narration
+live (useful for `manual` recording, where you don't own the video file).
+
+**Capturing other system audio (optional).** If you also want app sounds or other
+audio in the recording, set `recording.audioDevice` to a dshow device:
 
 1. Enable *Stereo Mix* (Sound settings → Recording → show disabled devices), or
    install a virtual audio cable.
 2. List device names: `ffmpeg -list_devices true -f dshow -i dummy`
 3. Set e.g. `"audioDevice": "Stereo Mix (Realtek(R) Audio)"`.
-
-Otherwise, rely on captions, or add a voice-over in post.
 
 ---
 

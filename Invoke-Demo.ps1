@@ -118,6 +118,10 @@ $cfg = @{
 $minimize = (-not $KeepController) -and [bool](Get-Prop $settings 'minimizeControllerWindow' $true)
 $countdown = [int](Get-Prop $startup 'countdownSec' 3)
 
+# Narration is baked into the video (post-mux) only when we own a recorded file.
+$narrationToVideo = ($mode -eq 'ffmpeg') -and $autoRec -and $cfg.narrationEnabled -and [bool](Get-Prop $narr 'captureToVideo' $true)
+$narrDir = $null
+
 $script:RecHandle = $null
 $script:ShotIndex = 0
 
@@ -241,6 +245,11 @@ for ($c = $countdown; $c -gt 0; $c--) { Write-Host "  starting in $c..." -Foregr
 if ($autoRec -and $mode -ne 'none') {
     $script:RecHandle = Start-DemoRecording -Recording $recCfg -OutputDir $cfg.outputDir -BaseName $baseName -TimeStamp $timeStamp
 }
+if ($narrationToVideo -and $script:RecHandle) {
+    $narrSw  = [System.Diagnostics.Stopwatch]::StartNew()   # t=0 at recording start, for clip offsets
+    $narrDir = Join-Path $cfg.outputDir (".narration-$timeStamp")
+    Initialize-NarrationCapture -Dir $narrDir -Stopwatch $narrSw
+}
 if ($minimize) { Set-ControllerWindowState -State minimized }
 
 $failed = $null
@@ -262,7 +271,17 @@ try {
         $outFile = Stop-DemoRecording -Handle $script:RecHandle
         $script:RecHandle = $null
     }
-    Stop-DemoOverlays
+    # Bake the timestamped narration clips into the finalized video.
+    if ($narrationToVideo -and $outFile) {
+        $clips = Get-NarrationClips
+        if ($clips.Count -gt 0) {
+            Write-Host "  Muxing $($clips.Count) narration clip(s) into the video..." -ForegroundColor Cyan
+            $outFile = Add-NarrationToVideo -VideoFile $outFile -Clips $clips
+        }
+    }
+    Stop-DemoOverlays        # releases SoundPlayer file handles before cleanup
+    Clear-NarrationCapture
+    if ($narrDir -and (Test-Path $narrDir)) { Remove-Item $narrDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host ''
