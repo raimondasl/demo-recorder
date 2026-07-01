@@ -11,6 +11,8 @@ roughly by priority.
 - [x] Narration baked into the video (render → timestamp → ffmpeg mux; no Stereo Mix)
 - [x] **`winrt` / `sapi` narration engines** — built-in Windows OneCore / legacy voices
 - [x] **`piper` narration engine** — offline neural voices (free, natural; `Setup-Piper.ps1`)
+- [x] **Larger terminal font** for demos (`settings.terminal.*`; classic `conhost` + `HKCU\Console`, restored after)
+- [x] **`Trim-Recording.ps1`** — cut the start/end off a recording (re-encode or fast copy)
 
 > Note: Windows 11 "Natural" voices added via Narrator (Aria/Ava/Andrew) are
 > packaged as Narrator-only app packages and are NOT exposed to the SAPI/WinRT
@@ -53,4 +55,13 @@ optional GPU (onnxruntime) build.
 - [ ] Coordinate-free UI targeting (UI Automation) to reduce reliance on `click`.
 - [ ] `cmd` / WSL / Windows Terminal presets for `run`.
 - [ ] A `verify`-style assertion step (wait for a window/text to appear).
-- [ ] Per-step ret/timeout and an on-error policy (continue vs. abort).
+- [ ] Per-step retry/timeout and an on-error policy (continue vs. abort).
+
+## Post-processing & polish
+- [ ] **Built-in auto-trim** — `recording.trimStartSec` (and `trimEndSec`) so a demo
+      trims its own startup dead time after recording stops, reusing the
+      `Trim-Recording.ps1` logic. (The countdown already runs before recording,
+      so the first ~3s is mostly the controller minimizing + first caption/terminal.)
+- [ ] **Batch trim** — a flag/mode to trim every clip in `recordings/` in one pass.
+- [ ] **Polished example defaults** — ship the bundled example scenarios with a
+      chosen Piper voice + terminal font size so a fresh clone looks good out of the box.
