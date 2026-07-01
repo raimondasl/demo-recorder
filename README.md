@@ -181,6 +181,19 @@ ignores console fonts). The original font is **restored automatically** when the
 demo ends. This also makes typing/focus more reliable when Windows Terminal is
 your default. Try ~24–32 px.
 
+### Trimming a recording
+
+To cut the startup dead time (or the end) off a finished recording:
+
+```powershell
+.\Trim-Recording.ps1 .\recordings\demo.mp4               # drop the first 3s
+.\Trim-Recording.ps1 .\recordings\demo.mp4 -StartSec 5 -EndTrimSec 2
+.\Trim-Recording.ps1 .\recordings\demo.mp4 -InPlace      # overwrite the original
+```
+
+Re-encodes for a frame-accurate cut by default; add `-Fast` for an instant,
+lossless stream copy (snaps to the nearest keyframe).
+
 ---
 
 ## How it works
