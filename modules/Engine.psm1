@@ -35,6 +35,8 @@ Add-Type -AssemblyName System.Drawing
 $script:WShell       = $null
 $script:DemoWindows  = @{}     # 'as'-name -> System.Diagnostics.Process
 $script:CurrentShell = $null   # last-launched terminal, reused by 'run' steps
+$script:TermForceConhost = $false   # route terminals through conhost.exe (classic host)
+$script:TermSavedFont    = $null    # saved HKCU\Console font, restored after the demo
 
 function Get-WShell {
     if (-not $script:WShell) { $script:WShell = New-Object -ComObject WScript.Shell }
@@ -110,6 +112,36 @@ function Set-DemoForeground {
     }
     Start-Sleep -Milliseconds $SettleMs
     return $ok
+}
+
+# --- Terminal appearance (font + classic conhost) ---------------------------
+# Windows Terminal ignores console font settings, and under it the shell process
+# doesn't own its window (breaking focus/typing). So for readable, reliable demos
+# we set the console font in HKCU\Console and launch terminals via conhost.exe
+# (the classic host), then restore the font afterwards.
+function Set-DemoTerminalStyle {
+    param([int]$FontSize = 0, [string]$FontFace = 'Consolas', [bool]$ForceConhost = $false)
+    $script:TermForceConhost = ($ForceConhost -or $FontSize -gt 0)
+    if ($FontSize -gt 0) {
+        $k = 'HKCU:\Console'
+        $ck = Get-ItemProperty $k -ErrorAction SilentlyContinue
+        $script:TermSavedFont = @{ FontSize = $ck.FontSize; FaceName = $ck.FaceName; FontFamily = $ck.FontFamily; FontWeight = $ck.FontWeight }
+        Set-ItemProperty $k -Name FontSize   -Value ($FontSize -shl 16) -Type DWord    # high word = pixel height
+        Set-ItemProperty $k -Name FaceName   -Value $FontFace           -Type String
+        Set-ItemProperty $k -Name FontFamily -Value 54                  -Type DWord    # TrueType
+        Set-ItemProperty $k -Name FontWeight -Value 400                 -Type DWord
+    }
+}
+
+function Restore-DemoTerminalStyle {
+    if ($script:TermSavedFont) {
+        $k = 'HKCU:\Console'; $s = $script:TermSavedFont
+        foreach ($n in 'FontSize','FaceName','FontFamily','FontWeight') {
+            if ($null -ne $s[$n]) { Set-ItemProperty $k -Name $n -Value $s[$n] }
+        }
+        $script:TermSavedFont = $null
+    }
+    $script:TermForceConhost = $false
 }
 
 # --- Apps / terminals -------------------------------------------------------
@@ -224,7 +256,12 @@ function Invoke-DemoRun {
     if ($needNew -or -not $shellProc) {
         if ($Shell -eq 'cmd') { $exe = 'cmd.exe';        $a = @('/K') }
         else                  { $exe = 'powershell.exe'; $a = @('-NoExit','-NoProfile') }
-        $shellProc = Start-DemoApp -App $exe -Arguments $a -As $As
+        if ($script:TermForceConhost) {
+            # conhost.exe <shell> <args...> forces the classic host (honors the font).
+            $shellProc = Start-DemoApp -App 'conhost.exe' -Arguments (@($exe) + $a) -As $As
+        } else {
+            $shellProc = Start-DemoApp -App $exe -Arguments $a -As $As
+        }
         Start-Sleep -Milliseconds 700   # let the prompt finish drawing
     }
     $script:CurrentShell = $shellProc
@@ -298,4 +335,4 @@ Export-ModuleMember -Function `
     Get-WShell, ConvertTo-SendKeysLiteral, ConvertTo-SendKeysChord, Get-DemoKeyVocabulary, `
     Set-DemoForeground, Start-DemoApp, Get-DemoWindowProcess, Focus-DemoWindow, Set-DemoWindowState, `
     Send-DemoText, Send-DemoKeys, Invoke-DemoRun, Invoke-DemoClick, Save-DemoScreenshot, `
-    Set-ControllerWindowState, Reset-DemoEngineState
+    Set-DemoTerminalStyle, Restore-DemoTerminalStyle, Set-ControllerWindowState, Reset-DemoEngineState

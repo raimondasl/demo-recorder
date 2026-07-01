@@ -85,6 +85,16 @@
           "additionalProperties": false,
           "properties": { "countdownSec": { "type": "integer", "default": 3 } }
         },
+        "terminal": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Console appearance for 'run' terminals. Applied by temporarily setting the HKCU\\Console font (restored after) and launching via conhost.exe (the classic host, which honors the font). Opt-in.",
+          "properties": {
+            "fontSize": { "type": "integer", "default": 0, "description": "Console font height in pixels (e.g. 24-32 for demos). 0 = leave the current font unchanged." },
+            "fontFace": { "type": "string", "default": "Consolas", "description": "Console font face, e.g. 'Consolas' or 'Cascadia Mono'." },
+            "forceConhost": { "type": "boolean", "description": "Launch terminals via the classic console host even without a font change (improves focus/typing reliability when Windows Terminal is the default). Defaults to true when fontSize > 0." }
+          }
+        },
         "minimizeControllerWindow": { "type": "boolean", "default": true, "description": "Minimize the script's own console while recording so it is not on screen." }
       }
     },

@@ -166,6 +166,21 @@ Unavailable engines fall back gracefully (e.g. `piper` → `winrt` if not set up
 > way to get neural-quality narration. Cloud voices (OpenAI/Azure/ElevenLabs) are
 > on the [roadmap](docs/ROADMAP.md).
 
+### Bigger terminal font (readability)
+
+The tiny default console font is hard to read on video. Add a `terminal` block —
+no manual setup needed:
+
+```json
+"settings": { "terminal": { "fontSize": 26, "fontFace": "Consolas" } }
+```
+
+The engine temporarily sets the `HKCU\Console` font and launches `run` terminals
+through the classic console host (`conhost`), which honors it (Windows Terminal
+ignores console fonts). The original font is **restored automatically** when the
+demo ends. This also makes typing/focus more reliable when Windows Terminal is
+your default. Try ~24–32 px.
+
 ---
 
 ## How it works

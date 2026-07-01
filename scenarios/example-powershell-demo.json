@@ -18,6 +18,7 @@
     },
     "narration": { "enabled": true, "engine": "piper", "rate": 0 },
     "captions": { "enabled": true, "position": "bottom", "fontSize": 28 },
+    "terminal": { "fontSize": 26, "fontFace": "Consolas" },
     "startup": { "countdownSec": 3 }
   },
   "steps": [

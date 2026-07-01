@@ -53,6 +53,9 @@ sensible default.
 | | `fontSize` | `28` | Caption font size. |
 | | `defaultDurationMs` | `3500` | How long captions show. |
 | `startup` | `countdownSec` | `3` | Countdown before the demo starts. |
+| `terminal` | `fontSize` | `0` | Console font height (px) for `run` terminals, e.g. `24`–`32`. `0` = leave unchanged. Temporarily sets the `HKCU\Console` font and launches via classic `conhost` (which honors it); restored afterward. |
+| | `fontFace` | `Consolas` | Console font face (e.g. `Consolas`, `Cascadia Mono`). |
+| | `forceConhost` | _auto_ | Use the classic console host even without a font change (more reliable focus/typing when Windows Terminal is the default). Auto-`true` when `fontSize > 0`. |
 | (top) | `minimizeControllerWindow` | `true` | Hide the script's own console during capture. |
 
 ---

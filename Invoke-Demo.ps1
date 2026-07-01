@@ -99,6 +99,8 @@ $narr     = Get-Prop $settings 'narration'
 $caps     = Get-Prop $settings 'captions'
 $startup  = Get-Prop $settings 'startup'
 
+$term     = Get-Prop $settings 'terminal'
+
 $mode = Get-Prop $rec 'mode' 'ffmpeg'
 if ($RecordMode) { $mode = $RecordMode }
 if ($NoRecord)   { $mode = 'none' }
@@ -149,6 +151,11 @@ $narrEngine = Set-NarrationEngine -Engine (Get-Prop $narr 'engine' 'winrt')
 # Narration is baked into the video (post-mux) only when we own a recorded file.
 $narrationToVideo = ($mode -eq 'ffmpeg') -and $autoRec -and $cfg.narrationEnabled -and [bool](Get-Prop $narr 'captureToVideo' $true)
 $narrDir = $null
+
+# Terminal appearance (opt-in): larger console font + classic conhost for readability.
+$termFont  = [int](Get-Prop $term 'fontSize' 0)
+$termFace  = Get-Prop $term 'fontFace' 'Consolas'
+$termForce = [bool](Get-Prop $term 'forceConhost' ($termFont -gt 0))
 
 $script:RecHandle = $null
 $script:ShotIndex = 0
@@ -270,6 +277,8 @@ Write-Host "==================================================================" 
 
 for ($c = $countdown; $c -gt 0; $c--) { Write-Host "  starting in $c..." -ForegroundColor DarkCyan; Start-Sleep -Seconds 1 }
 
+if ($termForce -or $termFont -gt 0) { Set-DemoTerminalStyle -FontSize $termFont -FontFace $termFace -ForceConhost $termForce }
+
 if ($autoRec -and $mode -ne 'none') {
     $script:RecHandle = Start-DemoRecording -Recording $recCfg -OutputDir $cfg.outputDir -BaseName $baseName -TimeStamp $timeStamp
 }
@@ -295,6 +304,7 @@ try {
     $failed = $_
 } finally {
     Set-ControllerWindowState -State normal
+    Restore-DemoTerminalStyle   # put HKCU\Console font back
     if ($script:RecHandle) {
         $outFile = Stop-DemoRecording -Handle $script:RecHandle
         $script:RecHandle = $null
