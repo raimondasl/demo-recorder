@@ -69,6 +69,7 @@ if ($ListVoices) {
     Write-Host ""
     Write-Host "Note: Windows 'Natural' voices added via Narrator are locked to Narrator and NOT usable here." -ForegroundColor DarkGray
     Write-Host "For natural narration, use engine 'piper' (.\Setup-Piper.ps1) - free & offline." -ForegroundColor DarkGray
+    Write-Host "Cloud engines 'azure' / 'openai' have their own voices - see README > Cloud voices." -ForegroundColor DarkGray
     exit 0
 }
 if (-not $Scenario) { Write-Host "Specify a scenario file (or use -ListVoices)." -ForegroundColor Red; exit 1 }
@@ -146,7 +147,20 @@ $piperModel = Get-Prop $piperCfg 'model' (Join-Path $PSScriptRoot 'voices\en_US-
 if (-not [System.IO.Path]::IsPathRooted($piperExe))   { $piperExe   = Join-Path $PSScriptRoot $piperExe }
 if (-not [System.IO.Path]::IsPathRooted($piperModel)) { $piperModel = Join-Path $PSScriptRoot $piperModel }
 [void](Set-PiperConfig -Exe $piperExe -Model $piperModel)
-$narrEngine = Set-NarrationEngine -Engine (Get-Prop $narr 'engine' 'winrt')
+
+# Cloud engines (azure/openai): read the API key from an env var (never the scenario).
+$engineName = Get-Prop $narr 'engine' 'winrt'
+if ($engineName -eq 'azure' -or $engineName -eq 'openai') {
+    if ($engineName -eq 'azure') { $defEnv = 'AZURE_SPEECH_KEY'; $defModel = '' }
+    else                         { $defEnv = 'OPENAI_API_KEY';   $defModel = 'tts-1-hd' }
+    $apiKeyEnv = Get-Prop $narr 'apiKeyEnv' $defEnv
+    $apiKey    = [Environment]::GetEnvironmentVariable($apiKeyEnv)
+    $region    = Get-Prop $narr 'region' 'eastus'
+    $model     = Get-Prop $narr 'model' $defModel
+    [void](Set-CloudTtsConfig -Engine $engineName -ApiKey $apiKey -Region $region -Model $model -CacheDir (Join-Path $PSScriptRoot '.tts-cache'))
+    if (-not $apiKey) { Write-Host "  Note: env var '$apiKeyEnv' is not set - '$engineName' will fall back to a local voice. See README > Cloud voices." -ForegroundColor Yellow }
+}
+$narrEngine = Set-NarrationEngine -Engine $engineName
 
 # Narration is baked into the video (post-mux) only when we own a recorded file.
 $narrationToVideo = ($mode -eq 'ffmpeg') -and $autoRec -and $cfg.narrationEnabled -and [bool](Get-Prop $narr 'captureToVideo' $true)

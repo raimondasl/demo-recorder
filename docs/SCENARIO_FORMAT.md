@@ -43,9 +43,12 @@ sensible default.
 | | `stepPauseMs` | `800` | Pause after each step. |
 | | `shell` | `powershell` | Default shell for `run`. |
 | `narration` | `enabled` | `true` | Spoken narration on/off. |
-| | `engine` | `winrt` | `piper` = **offline neural voices** (best quality, free — run `Setup-Piper.ps1`); `winrt` = built-in OneCore voices (David/Zira/Mark); `sapi` = legacy. Unavailable engines fall back gracefully. |
+| | `engine` | `winrt` | `piper` = offline neural (free); `azure` = Azure neural (free tier); `openai` = OpenAI (paid); `winrt`/`sapi` = built-in Windows voices. Cloud engines need an API key env var (see README ▸ Cloud voices). Unavailable engines fall back gracefully. |
 | | `captureToVideo` | `true` | With ffmpeg recording, bake narration into the MP4 (rendered to WAV + muxed at the right time; no Stereo Mix needed). |
-| | `voice` | _default_ | winrt/sapi only (Piper uses its model). List with `Invoke-Demo.ps1 -ListVoices`. e.g. `Microsoft Zira`. |
+| | `voice` | _default_ | Voice id for the engine (Piper uses its model instead). e.g. `Microsoft Zira` (winrt), `en-US-AvaMultilingualNeural` (azure), `coral` (openai). List built-in ones with `Invoke-Demo.ps1 -ListVoices`. |
+| | `region` | `eastus` | **azure only** — your Speech resource region (must match). |
+| | `model` | `tts-1-hd` | **openai only** — `tts-1-hd`, `tts-1`, or `gpt-4o-mini-tts`. |
+| | `apiKeyEnv` | _auto_ | Env var holding the cloud key. Defaults `AZURE_SPEECH_KEY` / `OPENAI_API_KEY`. The key is never stored in the scenario. |
 | | `piper` | _auto_ | `{ "exe": ..., "model": ... }` — paths for the Piper engine. Defaults: `tools/piper/piper.exe`, `voices/en_US-lessac-medium.onnx`. |
 | | `rate` / `volume` | `0` / `100` | Speech rate (-10..10), volume (0..100). |
 | `captions` | `enabled` | `true` | On-screen captions on/off. |

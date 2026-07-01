@@ -11,6 +11,7 @@ roughly by priority.
 - [x] Narration baked into the video (render → timestamp → ffmpeg mux; no Stereo Mix)
 - [x] **`winrt` / `sapi` narration engines** — built-in Windows OneCore / legacy voices
 - [x] **`piper` narration engine** — offline neural voices (free, natural; `Setup-Piper.ps1`)
+- [x] **`azure` / `openai` cloud neural engines** — key from env var, WAV cache, graceful fallback
 - [x] **Larger terminal font** for demos (`settings.terminal.*`; classic `conhost` + `HKCU\Console`, restored after)
 - [x] **`Trim-Recording.ps1`** — cut the start/end off a recording (re-encode or fast copy)
 
@@ -26,16 +27,15 @@ WAV, which the existing timestamp+mux pipeline then bakes into the video. Adding
 a provider means a new `Render-NarrationWav*` function in `modules/Overlay.psm1`
 and a new `narration.engine` value.
 
-### Cloud neural TTS (highest quality) — planned
-Best naturalness/expressiveness. Pre-render each line to WAV at run time.
-- **Candidates:** Azure AI Speech (neural, generous free tier), OpenAI TTS
-  (`gpt-4o-mini-tts` — cheap, simple), ElevenLabs (most expressive, pricier).
-- **Needs:** an API key (read from an env var, never committed), internet, and a
-  small per-character cost.
-- **Design sketch:** `narration.engine: "azure" | "openai" | "elevenlabs"`, with
-  `narration.apiKeyEnv`, `narration.model`, `narration.voice`. Cache WAVs by a
-  hash of (text+voice+engine) so re-runs don't re-bill. Fail closed to `winrt`
-  with a clear warning if the key is missing or the call fails.
+### Cloud neural TTS — Azure & OpenAI — DONE
+`narration.engine: "azure" | "openai"`, keys read from an env var
+(`narration.apiKeyEnv`, defaults `AZURE_SPEECH_KEY` / `OPENAI_API_KEY`), rendered
+over HTTPS and cached in `.tts-cache/` by request hash so re-runs don't re-bill.
+Azure uses SSML → `riff-24khz-16bit-mono-pcm`; OpenAI uses `/v1/audio/speech` with
+`response_format: wav`. A missing key falls back to a local engine with a warning.
+See README ▸ Cloud voices for key setup.
+- **Follow-ups:** ElevenLabs engine; retry/backoff on 429s; trailing-silence trim
+  for `gpt-4o-mini-tts`; a preflight that validates the key before a run starts.
 
 ### Piper (free, local, offline neural) — DONE
 Implemented via the self-contained Piper Windows binary (no Python at all).
