@@ -54,7 +54,10 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
-            "engine": { "enum": ["piper", "winrt", "sapi"], "default": "winrt", "description": "piper = offline neural voices (best quality, free; run Setup-Piper.ps1); winrt = built-in OneCore voices (David/Zira/Mark); sapi = legacy voices. Note: Windows 'Natural' voices added via Narrator are locked to Narrator and cannot be used here. Unavailable engines fall back gracefully." },
+            "engine": { "enum": ["piper", "winrt", "sapi", "azure", "openai"], "default": "winrt", "description": "piper = offline neural (free; Setup-Piper.ps1); azure = Azure AI Speech neural (free tier available); openai = OpenAI TTS (paid); winrt/sapi = built-in Windows voices. Cloud engines read the API key from an env var (see apiKeyEnv). Unavailable engines fall back gracefully." },
+            "region": { "type": "string", "description": "azure only: your Speech resource region, e.g. 'eastus' (must match the resource)." },
+            "model": { "type": "string", "description": "openai only: 'tts-1-hd' (default), 'tts-1', or 'gpt-4o-mini-tts'." },
+            "apiKeyEnv": { "type": "string", "description": "Name of the environment variable holding the cloud API key. Defaults: AZURE_SPEECH_KEY / OPENAI_API_KEY. The key is NEVER stored in the scenario." },
             "captureToVideo": { "type": "boolean", "default": true, "description": "When recording with ffmpeg, render each narration line to WAV and mux it into the video at the right time (no Stereo Mix needed). If false, narration is only heard live." },
             "voice": { "type": "string", "description": "Voice (winrt/sapi only; Piper uses the model). List options with: Invoke-Demo.ps1 -ListVoices. e.g. 'Microsoft Zira'." },
             "rate": { "type": "integer", "default": 0, "minimum": -10, "maximum": 10, "description": "Speaking rate; higher is faster (all engines)." },

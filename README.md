@@ -154,17 +154,68 @@ voice at the official [samples page](https://rhasspy.github.io/piper-samples/),
 then browse files at [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
 
 **Engine options** (`narration.engine`):
-- **`piper`** — offline neural, best quality, free. Needs `Setup-Piper.ps1`.
+- **`piper`** — offline neural, free. Needs `Setup-Piper.ps1`.
+- **`azure`** — Azure AI Speech neural (Aria/Andrew/Ava…). **Free tier available.** Needs a key.
+- **`openai`** — OpenAI TTS. Paid. Needs a key + billing.
 - **`winrt`** (default) — built-in Windows OneCore voices (David/Zira/Mark).
 - **`sapi`** — legacy SAPI5 voices.
 
-Unavailable engines fall back gracefully (e.g. `piper` → `winrt` if not set up).
+Unavailable engines fall back gracefully (e.g. `piper` → `winrt` if not set up;
+`azure`/`openai` → a local voice if the key env var isn't set).
 
 > ⚠️ Windows 11 **"Natural" voices added via Narrator** (Aria/Ava/Andrew) are
 > packaged as Narrator-only app packages and are **not** exposed to SAPI/WinRT, so
-> no third-party app (including this one) can use them. Piper is the free/offline
-> way to get neural-quality narration. Cloud voices (OpenAI/Azure/ElevenLabs) are
-> on the [roadmap](docs/ROADMAP.md).
+> no third-party app can use them — but the *same* voices are available through the
+> **`azure`** engine below.
+
+### Cloud voices — Azure & OpenAI (highest quality)
+
+Both engines read the **API key from an environment variable** (never the scenario
+file), render each line to WAV over HTTPS, and cache results in `.tts-cache/` so
+re-running a demo doesn't re-call (or re-bill) the API.
+
+Pick one:
+
+| | Cost | Voices | Best for |
+|---|---|---|---|
+| **Azure** | **Free tier**: 500K chars/month, then ~$15 / 1M | Aria, Andrew, Ava, Jenny, Guy… (the Windows "Natural" voices) | Free, high-quality neural |
+| **OpenAI** | Paid, ~$15–30 / 1M chars (no real free tier) | alloy, nova, coral, onyx, shimmer, echo… | Simplest API if you already have OpenAI billing |
+
+#### Azure AI Speech — get a key (free)
+
+1. Sign in to the [Azure portal](https://portal.azure.com) (create a free account if needed).
+2. **Create a resource → search "Speech" → Create.**
+3. Set Subscription, Resource group, a **Region** (e.g. *East US* — remember it), a Name, and **Pricing tier = Free F0**.
+4. **Review + create → Create → Go to resource.**
+5. Left menu → **Resource Management → Keys and Endpoint.** Copy **KEY 1** and note the **Location/Region** (e.g. `eastus`).
+6. Set the key as an env var and use it:
+   ```powershell
+   setx AZURE_SPEECH_KEY "<your-key>"     # persists; reopen the terminal after
+   ```
+   ```json
+   "narration": { "engine": "azure", "region": "eastus", "voice": "en-US-AvaMultilingualNeural" }
+   ```
+   Voices: `en-US-AvaMultilingualNeural`, `en-US-AndrewMultilingualNeural`,
+   `en-US-EmmaMultilingualNeural`, `en-US-AriaNeural`, `en-US-JennyNeural`, …
+
+#### OpenAI — get a key (paid)
+
+1. Sign in to the [OpenAI platform](https://platform.openai.com); verify email + phone.
+2. **Settings → Billing → Add payment method** (TTS fails without billing; optionally set a usage limit).
+3. **[API keys](https://platform.openai.com/api-keys) → Create new secret key**, copy it (shown once, starts with `sk-`).
+4. Set it and use it:
+   ```powershell
+   setx OPENAI_API_KEY "sk-..."           # persists; reopen the terminal after
+   ```
+   ```json
+   "narration": { "engine": "openai", "model": "tts-1-hd", "voice": "coral" }
+   ```
+   Models: `tts-1-hd` (default, predictable pacing), `tts-1` (cheaper, free-tier
+   at 3 req/min), `gpt-4o-mini-tts` (most expressive, but ignores `rate` and can
+   add trailing silence). Voices: `coral`, `nova`, `onyx`, `shimmer`, `alloy`, …
+
+> The API key lives only in the env var and is never written to a scenario or the
+> repo. If a key leaks, rotate it in the provider's dashboard.
 
 ### Bigger terminal font (readability)
 

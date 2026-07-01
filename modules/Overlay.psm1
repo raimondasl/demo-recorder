@@ -62,9 +62,10 @@ $script:Synths      = New-Object System.Collections.ArrayList
 $script:Players     = New-Object System.Collections.ArrayList   # async SoundPlayers kept alive
 $script:TempWavs    = New-Object System.Collections.ArrayList   # live-only WinRT WAVs to clean up
 $script:NarrationCapture = $null   # when set, narration is rendered to WAV + timestamped for muxing
-$script:NarrationEngine  = 'sapi'  # 'sapi' | 'winrt' | 'piper'; set via Set-NarrationEngine
+$script:NarrationEngine  = 'sapi'  # 'sapi' | 'winrt' | 'piper' | 'azure' | 'openai'
 $script:PiperExe   = $null
 $script:PiperModel = $null
+$script:CloudCfg   = @{ engine = $null; key = $null; region = $null; model = $null; cacheDir = $null }  # cloud TTS config; set via Set-CloudTtsConfig
 
 # The work each caption runspace performs. Kept as a scriptblock so it can be
 # pushed into an STA runspace.
@@ -152,14 +153,28 @@ function Test-PiperReady {
     return ($script:PiperExe -and (Test-Path $script:PiperExe) -and $script:PiperModel -and (Test-Path $script:PiperModel))
 }
 
+function Set-CloudTtsConfig {
+    param([string]$Engine, [string]$ApiKey, [string]$Region, [string]$Model, [string]$CacheDir)
+    $script:CloudCfg = @{ engine = $Engine; key = $ApiKey; region = $Region; model = $Model; cacheDir = $CacheDir }
+    if ($CacheDir -and -not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
+    return [bool]$ApiKey
+}
+
 function Set-NarrationEngine {
-    param([ValidateSet('sapi','winrt','piper')] [string]$Engine)
+    param([ValidateSet('sapi','winrt','piper','azure','openai')] [string]$Engine)
+    # Pick the best available fallback if the requested engine can't run.
+    $fallback = if ($script:WinRTAvailable) { 'winrt' } else { 'sapi' }
+    if (Test-PiperReady) { $fallback = 'piper' }
+
     if ($Engine -eq 'winrt' -and -not $script:WinRTAvailable) {
         Write-Warning "WinRT speech unavailable on this system; using SAPI voices."
         $script:NarrationEngine = 'sapi'
     } elseif ($Engine -eq 'piper' -and -not (Test-PiperReady)) {
-        $fallback = if ($script:WinRTAvailable) { 'winrt' } else { 'sapi' }
-        Write-Warning "Piper not set up (run Setup-Piper.ps1); falling back to '$fallback' voices."
+        $fb = if ($script:WinRTAvailable) { 'winrt' } else { 'sapi' }
+        Write-Warning "Piper not set up (run Setup-Piper.ps1); falling back to '$fb' voices."
+        $script:NarrationEngine = $fb
+    } elseif (($Engine -eq 'azure' -or $Engine -eq 'openai') -and -not $script:CloudCfg.key) {
+        Write-Warning "No API key for '$Engine' (set the env var; see README); falling back to '$fallback'."
         $script:NarrationEngine = $fallback
     } else {
         $script:NarrationEngine = $Engine
@@ -228,6 +243,75 @@ function Render-NarrationWavWinRT {
     }
 }
 
+# --- Cloud neural TTS (Azure / OpenAI) --------------------------------------
+# Both render a WAV over HTTPS. Keys come from the caller (read from an env var
+# in Invoke-Demo) and are never stored in scenarios. Results are cached by a hash
+# of the request so re-running a demo doesn't re-call (or re-bill) the API.
+
+function Render-NarrationWavAzure {
+    param([string]$Text, [string]$Path, [string]$Voice, [int]$Rate = 0)
+    $cfg = $script:CloudCfg
+    if (-not $cfg.key)    { throw "Azure Speech key not set." }
+    if (-not $cfg.region) { throw "Azure region not set (narration.region)." }
+    $v = if ($Voice) { $Voice } else { 'en-US-AvaMultilingualNeural' }
+    $pct = [int]([Math]::Max(-50, [Math]::Min(50, $Rate * 5)))          # -10..10 -> -50%..+50% (Azure allows 0.5x-2x)
+    $rateAttr = if ($pct -ge 0) { "+$pct%" } else { "$pct%" }
+    $esc = [System.Security.SecurityElement]::Escape($Text)
+    $ssml = "<speak version='1.0' xml:lang='en-US'><voice name='$v'><prosody rate='$rateAttr'>$esc</prosody></voice></speak>"
+    $uri = "https://$($cfg.region).tts.speech.microsoft.com/cognitiveservices/v1"
+    $headers = @{ 'Ocp-Apim-Subscription-Key' = $cfg.key; 'X-Microsoft-OutputFormat' = 'riff-24khz-16bit-mono-pcm'; 'User-Agent' = 'demo-recorder' }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        Invoke-WebRequest -Uri $uri -Method Post -Headers $headers -ContentType 'application/ssml+xml' `
+            -Body ([Text.Encoding]::UTF8.GetBytes($ssml)) -OutFile $Path -UseBasicParsing -ErrorAction Stop | Out-Null
+    } catch {
+        if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction SilentlyContinue }
+        throw "Azure TTS request failed (voice '$v', region '$($cfg.region)'): $($_.Exception.Message)"
+    }
+}
+
+function Render-NarrationWavOpenAI {
+    param([string]$Text, [string]$Path, [string]$Voice, [int]$Rate = 0)
+    $cfg = $script:CloudCfg
+    if (-not $cfg.key) { throw "OpenAI API key not set." }
+    $model = if ($cfg.model) { $cfg.model } else { 'tts-1-hd' }
+    $v = if ($Voice) { $Voice } else { 'coral' }
+    $bodyObj = [ordered]@{ model = $model; voice = $v; input = $Text; response_format = 'wav' }
+    if ($model -like 'tts-1*') {                                        # 'speed' is only honored by tts-1 / tts-1-hd
+        $bodyObj.speed = [Math]::Round([Math]::Max(0.5, [Math]::Min(2.0, 1.0 + ($Rate / 10.0) * 0.4)), 2)
+    }
+    $body = $bodyObj | ConvertTo-Json -Compress
+    $headers = @{ Authorization = "Bearer $($cfg.key)" }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        Invoke-WebRequest -Uri 'https://api.openai.com/v1/audio/speech' -Method Post -Headers $headers -ContentType 'application/json' `
+            -Body ([Text.Encoding]::UTF8.GetBytes($body)) -OutFile $Path -UseBasicParsing -ErrorAction Stop | Out-Null
+    } catch {
+        if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction SilentlyContinue }
+        throw "OpenAI TTS request failed (model '$model', voice '$v'): $($_.Exception.Message)"
+    }
+}
+
+# Render via a cloud engine, using a local WAV cache keyed by the request content.
+function Invoke-CloudRender {
+    param([string]$Engine, [string]$Text, [string]$Path, [string]$Voice, [int]$Rate = 0)
+    $cfg = $script:CloudCfg
+    $cacheFile = $null
+    if ($cfg.cacheDir) {
+        $material = "$Engine|$Voice|$($cfg.model)|$Rate|$Text"
+        $md5 = [System.Security.Cryptography.MD5]::Create()
+        $hash = ([BitConverter]::ToString($md5.ComputeHash([Text.Encoding]::UTF8.GetBytes($material))) -replace '-', '').ToLowerInvariant()
+        $md5.Dispose()
+        $cacheFile = Join-Path $cfg.cacheDir ("$hash.wav")
+        if (Test-Path $cacheFile) { Copy-Item $cacheFile $Path -Force; return }
+    }
+    switch ($Engine) {
+        'azure'  { Render-NarrationWavAzure  -Text $Text -Path $Path -Voice $Voice -Rate $Rate }
+        'openai' { Render-NarrationWavOpenAI -Text $Text -Path $Path -Voice $Voice -Rate $Rate }
+    }
+    if ($cacheFile -and (Test-Path $Path)) { Copy-Item $Path $cacheFile -Force }
+}
+
 # Render narration to a PCM WAV file. SAPI locks the file until output is reset,
 # so we reset to null and dispose before returning (per System.Speech guidance).
 function Render-NarrationWav {
@@ -273,7 +357,7 @@ function Invoke-DemoNarration {
 
     # winrt/piper always render to a WAV (no direct device output); SAPI renders to
     # WAV only when capturing (so it can be muxed), otherwise it speaks directly.
-    $renderToWav = ($engine -eq 'winrt') -or ($engine -eq 'piper') -or $capturing
+    $renderToWav = ($engine -in @('winrt','piper','azure','openai')) -or $capturing
     if ($renderToWav) {
         if ($capturing) {
             $cap = $script:NarrationCapture; $cap.index++
@@ -283,9 +367,11 @@ function Invoke-DemoNarration {
             [void]$script:TempWavs.Add($wav)
         }
         switch ($engine) {
-            'piper' { Render-NarrationWavPiper -Text $Text -Path $wav -Rate $Rate }
-            'winrt' { Render-NarrationWavWinRT  -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
-            default { Render-NarrationWav        -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
+            'piper'  { Render-NarrationWavPiper -Text $Text -Path $wav -Rate $Rate }
+            'winrt'  { Render-NarrationWavWinRT  -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
+            'azure'  { Invoke-CloudRender -Engine 'azure'  -Text $Text -Path $wav -Voice $Voice -Rate $Rate }
+            'openai' { Invoke-CloudRender -Engine 'openai' -Text $Text -Path $wav -Voice $Voice -Rate $Rate }
+            default  { Render-NarrationWav        -Text $Text -Path $wav -Voice $Voice -Rate $Rate -Volume $Volume }
         }
         if ($capturing) { [void]$cap.clips.Add(@{ file = $wav; offsetMs = [int]$cap.sw.Elapsed.TotalMilliseconds }) }
         $player = New-Object System.Media.SoundPlayer($wav)
@@ -336,5 +422,6 @@ function Stop-DemoOverlays {
 }
 
 Export-ModuleMember -Function Show-DemoCaption, Invoke-DemoNarration, Get-DemoVoices, Stop-DemoOverlays, `
-    Render-NarrationWav, Render-NarrationWavWinRT, Render-NarrationWavPiper, Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture, `
-    Set-NarrationEngine, Set-PiperConfig, Test-PiperReady, Get-WinRTVoices
+    Render-NarrationWav, Render-NarrationWavWinRT, Render-NarrationWavPiper, Render-NarrationWavAzure, Render-NarrationWavOpenAI, `
+    Initialize-NarrationCapture, Get-NarrationClips, Clear-NarrationCapture, `
+    Set-NarrationEngine, Set-PiperConfig, Test-PiperReady, Set-CloudTtsConfig, Get-WinRTVoices
