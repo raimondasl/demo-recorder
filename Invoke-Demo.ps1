@@ -303,7 +303,8 @@ if ($narrationToVideo -and $script:RecHandle) {
 }
 if ($minimize) { Set-ControllerWindowState -State minimized }
 
-$failed = $null
+$failed  = $null
+$outFile = $null   # stays null when not recording (mode 'none'/manual); StrictMode needs it initialized
 try {
     $n = 0
     foreach ($step in $steps) {
