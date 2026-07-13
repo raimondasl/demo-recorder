@@ -31,14 +31,16 @@ Describe 'Media (ffmpeg)' -Skip:(-not $HasFfmpeg) {
         $script:work = Join-Path $env:TEMP ("demorec-tests-" + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $script:work -Force | Out-Null
 
+        # -hide_banner -loglevel error => no stderr on success, so ffmpeg's banner
+        # can't be wrapped into a terminating NativeCommandError under ErrorAction=Stop.
         function script:New-TestVideo { param($Path, $Dur)
-            & $script:ffmpeg -y -f lavfi -i "testsrc=duration=${Dur}:size=320x240:rate=15" -pix_fmt yuv420p $Path 2>$null | Out-Null
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=duration=${Dur}:size=320x240:rate=15" -pix_fmt yuv420p $Path | Out-Null
         }
         function script:New-TestWav { param($Path, $Dur)
-            & $script:ffmpeg -y -f lavfi -i "sine=frequency=440:duration=${Dur}" -ar 24000 -ac 1 $Path 2>$null | Out-Null
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=${Dur}" -ar 24000 -ac 1 $Path | Out-Null
         }
         function script:Get-Dur { param($Path)
-            [double](& $script:ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $Path)
+            [double](& $script:ffprobe -hide_banner -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $Path)
         }
     }
     AfterAll {
