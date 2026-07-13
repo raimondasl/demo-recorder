@@ -1,5 +1,7 @@
 # Demo Recorder
 
+[![CI](https://github.com/raimondasl/demo-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/raimondasl/demo-recorder/actions/workflows/ci.yml)
+
 Record a video demo of any Windows app or CLI workflow — **fully automated**.
 You write (or have Claude generate) a JSON **scenario**; the engine opens windows,
 types commands into a real terminal, narrates, shows captions, and captures the
@@ -288,6 +290,20 @@ Design notes:
   special characters automatically.
 
 ---
+
+## Tests
+
+Pester tests run in CI on `windows-latest` (and locally):
+
+```powershell
+Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+Invoke-Pester -Path .\tests -Output Detailed
+```
+
+They cover the logic (validation, SendKeys encoding, settings, ffmpeg arg building)
+and the real ffmpeg trim/mux paths (using generated test clips — no screen needed).
+GUI automation, audio playback, and live cloud TTS can't run headlessly — see
+[tests/README.md](tests/README.md) for the full coverage breakdown.
 
 ## Roadmap
 
