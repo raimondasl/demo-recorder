@@ -39,6 +39,12 @@ Describe 'Media (ffmpeg)' -Skip:(-not $HasFfmpeg) {
         function script:New-TestWav { param($Path, $Dur)
             & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=${Dur}" -ar 24000 -ac 1 $Path | Out-Null
         }
+        function script:New-TestAV { param($Path, $Dur)   # video + audio
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=duration=${Dur}:size=320x240:rate=15" -f lavfi -i "sine=frequency=440:duration=${Dur}" -pix_fmt yuv420p -c:a aac -shortest $Path | Out-Null
+        }
+        function script:Get-StreamTypes { param($Path)
+            (& $script:ffprobe -hide_banner -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $Path) -join ','
+        }
         function script:Get-Dur { param($Path)
             [double](& $script:ffprobe -hide_banner -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $Path)
         }
@@ -84,6 +90,38 @@ Describe 'Media (ffmpeg)' -Skip:(-not $HasFfmpeg) {
             $out = Add-NarrationToVideo -VideoFile $vid -Clips @() -FfmpegPath $script:ffmpeg
             $out | Should -Be $vid
             (Get-Item $vid).Length | Should -Be $before
+        }
+    }
+
+    Context 'Cut-Recording.ps1' {
+        BeforeAll { $script:cut = Join-Path (Split-Path $PSScriptRoot -Parent) 'Cut-Recording.ps1' }
+
+        It 'removes a middle interval and rejoins (audio kept)' {
+            $src = Join-Path $script:work 'cav.mp4'; New-TestAV $src 8
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $script:cut $src -From 3 -To 5 | Out-Null
+            $out = Join-Path $script:work 'cav-cut.mp4'
+            Test-Path $out | Should -BeTrue
+            (Get-Dur $out) | Should -BeGreaterThan 5.5   # 8 - 2
+            (Get-Dur $out) | Should -BeLessThan 6.5
+            Get-StreamTypes $out | Should -Match 'video'
+            Get-StreamTypes $out | Should -Match 'audio'
+        }
+
+        It 'extracts only the interval with -Keep' {
+            $src = Join-Path $script:work 'kav.mp4'; New-TestAV $src 8
+            $out = Join-Path $script:work 'kav-keep.mp4'
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $script:cut $src -From 2 -To 5 -Keep -OutPath $out | Out-Null
+            (Get-Dur $out) | Should -BeGreaterThan 2.5
+            (Get-Dur $out) | Should -BeLessThan 3.5
+        }
+
+        It 'works on a video-only recording (no-audio branch)' {
+            $src = Join-Path $script:work 'vonly.mp4'; New-TestVideo $src 8
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $script:cut $src -From 3 -To 5 | Out-Null
+            $out = Join-Path $script:work 'vonly-cut.mp4'
+            (Get-Dur $out) | Should -BeGreaterThan 5.5
+            (Get-Dur $out) | Should -BeLessThan 6.5
+            Get-StreamTypes $out | Should -Not -Match 'audio'
         }
     }
 }

@@ -20,7 +20,8 @@ Invoke-Pester -Path .\tests -Output Detailed
 
 **`Media.Tests.ps1`** — real ffmpeg paths, using generated test clips (ffmpeg
 `lavfi`), so **no screen is needed**:
-- `Trim-Recording.ps1` cuts the requested seconds (verified with `ffprobe`).
+- `Trim-Recording.ps1` cuts the requested seconds off the start (verified with `ffprobe`).
+- `Cut-Recording.ps1` removes an interval from the middle, extracts one (`-Keep`), and handles the video-only (no-audio) path.
 - `Add-NarrationToVideo` muxes WAV clips into a silent video (asserts video+audio streams).
 
 Requires `ffmpeg`/`ffprobe` (installed by CI; auto-located locally). These tests
