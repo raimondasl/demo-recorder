@@ -234,9 +234,9 @@ ignores console fonts). The original font is **restored automatically** when the
 demo ends. This also makes typing/focus more reliable when Windows Terminal is
 your default. Try ~24–32 px.
 
-### Trimming a recording
+### Editing a recording
 
-To cut the startup dead time (or the end) off a finished recording:
+**Trim the start/end** (e.g. drop the startup dead time):
 
 ```powershell
 .\Trim-Recording.ps1 .\recordings\demo.mp4               # drop the first 3s
@@ -246,6 +246,18 @@ To cut the startup dead time (or the end) off a finished recording:
 
 Re-encodes for a frame-accurate cut by default; add `-Fast` for an instant,
 lossless stream copy (snaps to the nearest keyframe).
+
+**Cut an interval from inside** the video (rejoin the rest), or extract just an
+interval with `-Keep`:
+
+```powershell
+.\Cut-Recording.ps1 .\recordings\demo.mp4 -From 0:12 -To 0:18         # remove 0:12-0:18, rejoin
+.\Cut-Recording.ps1 .\recordings\demo.mp4 -From 0:30 -To 0:45 -Keep   # keep only that clip
+.\Cut-Recording.ps1 .\recordings\demo.mp4 -From 12 -To 18 -InPlace    # overwrite the original
+```
+
+Times are seconds or `mm:ss` / `hh:mm:ss`. Frame-accurate (re-encoded), and works
+with or without an audio track (narrated recordings keep their audio).
 
 ---
 
