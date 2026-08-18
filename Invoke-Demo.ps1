@@ -112,6 +112,8 @@ $recCfg = @{
     crf           = Get-Prop $rec 'crf' 23
     preset        = Get-Prop $rec 'preset' 'veryfast'
     captureCursor = [bool](Get-Prop $rec 'captureCursor' $true)
+    crashSafe     = [bool](Get-Prop $rec 'crashSafe' $true)
+    maxSeconds    = [int](Get-Prop $rec 'maxSeconds' 7200)
 }
 if (Get-Prop $rec 'region')      { $recCfg.region = (Get-Prop $rec 'region') }
 if (Get-Prop $rec 'audioDevice') { $recCfg.audioDevice = (Get-Prop $rec 'audioDevice') }

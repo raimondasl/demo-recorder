@@ -129,3 +129,75 @@ Describe 'ffmpeg argument building' {
         }
     }
 }
+
+Describe 'Window handle safety (PR #6 follow-up)' {
+    BeforeAll {
+        # A process that has exited reports an EMPTY MainWindowHandle - the same shape
+        # as a handle-less browser content process, and the case that used to abort a run.
+        $script:dead = Start-Process powershell -ArgumentList '-NoProfile', '-Command', 'exit' -PassThru
+        $script:dead.WaitForExit()
+    }
+    It 'reports Zero for a process with no window' {
+        Get-DemoWindowHandle -Process $script:dead | Should -Be ([IntPtr]::Zero)
+    }
+    It 'reports Zero for $null' {
+        Get-DemoWindowHandle -Process $null | Should -Be ([IntPtr]::Zero)
+    }
+    It 'Set-DemoForeground returns false instead of throwing' {
+        { Set-DemoForeground -Process $script:dead -SettleMs 10 -WarningAction SilentlyContinue } | Should -Not -Throw
+        (Set-DemoForeground -Process $script:dead -SettleMs 10 -WarningAction SilentlyContinue) | Should -BeFalse
+    }
+    It 'Set-DemoWindowState is a no-op instead of throwing' {
+        { Set-DemoWindowState -Process $script:dead -State 'maximized' -WarningAction SilentlyContinue } | Should -Not -Throw
+    }
+    It 'never selects a handle-less process as a target' {
+        # Every candidate returned by a title-less lookup must have a real handle.
+        $p = Get-DemoWindowProcess -TitleContains 'zzz-no-such-window-zzz'
+        $p | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Validator warns on multi-process processName (PR #6 follow-up)' {
+    It 'warns for <name>' -ForEach @(
+        @{ name = 'chrome' }, @{ name = 'msedge.exe' }, @{ name = 'firefox' }, @{ name = 'code' }
+    ) {
+        $scn = ('{"name":"t","steps":[{"action":"focus","processName":"' + $name + '"}]}') | ConvertFrom-Json
+        $r = Test-DemoScenario -Scenario $scn
+        $r.Errors.Count | Should -Be 0
+        ($r.Warnings -join "`n") | Should -Match 'multiple processes'
+    }
+    It 'warns for a window step too' {
+        $scn = '{"name":"t","steps":[{"action":"window","processName":"chrome","state":"maximized"}]}' | ConvertFrom-Json
+        (Test-DemoScenario -Scenario $scn).Warnings -join "`n" | Should -Match 'multiple processes'
+    }
+    It 'does not warn for a single-window app or for titleContains' {
+        $scn = '{"name":"t","steps":[{"action":"focus","processName":"notepad"},{"action":"focus","titleContains":"Chrome"}]}' | ConvertFrom-Json
+        (Test-DemoScenario -Scenario $scn).Warnings.Count | Should -Be 0
+    }
+}
+
+Describe 'Crash-safe recording args (PR #6 follow-up)' {
+    It 'defaults to a fragmented container that survives a kill' {
+        InModuleScope Recorder {
+            $s = (New-FfmpegArgs -R @{} -OutFile 'o.mp4') -join ' '
+            $s | Should -Match 'frag_keyframe\+empty_moov'
+            $s | Should -Match '-frag_duration 1000000'   # fragments land on disk every second
+            $s | Should -Match '-flush_packets 1'         # ...and are not held in ffmpeg's buffer
+            $s | Should -Not -Match 'faststart'
+        }
+    }
+    It 'uses plain faststart when crashSafe is disabled' {
+        InModuleScope Recorder {
+            $s = (New-FfmpegArgs -R @{ crashSafe = $false } -OutFile 'o.mp4') -join ' '
+            $s | Should -Match 'faststart'
+            $s | Should -Not -Match 'frag_keyframe'
+        }
+    }
+    It 'caps capture length so an orphaned ffmpeg cannot fill the disk' {
+        InModuleScope Recorder {
+            ((New-FfmpegArgs -R @{} -OutFile 'o.mp4') -join ' ')                  | Should -Match '-t 7200'
+            ((New-FfmpegArgs -R @{ maxSeconds = 60 } -OutFile 'o.mp4') -join ' ') | Should -Match '-t 60'
+            ((New-FfmpegArgs -R @{ maxSeconds = 0 } -OutFile 'o.mp4') -join ' ')  | Should -Not -Match '-t '
+        }
+    }
+}

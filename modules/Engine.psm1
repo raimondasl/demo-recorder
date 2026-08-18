@@ -101,14 +101,33 @@ function ConvertTo-SendKeysChord {
 }
 
 # --- Foreground / focus -----------------------------------------------------
+function Get-DemoWindowHandle {
+    # Return the process main-window handle, or [IntPtr]::Zero when there is none.
+    # MainWindowHandle can be $null (not just 0) - e.g. a stored process that has
+    # exited, or a handle-less content process of a multi-process app like a browser.
+    # $null -ne [IntPtr]::Zero is TRUE, so a naive guard passes null straight into
+    # user32 and the P/Invoke throws "Cannot convert null to type System.IntPtr",
+    # which used to abort the whole run. Everything funnels through here instead.
+    param([System.Diagnostics.Process]$Process)
+    if (-not $Process) { return [IntPtr]::Zero }
+    try {
+        $h = $Process.MainWindowHandle
+        if ($null -eq $h -or "$h" -eq "") { return [IntPtr]::Zero }
+        return [IntPtr]$h
+    } catch { return [IntPtr]::Zero }
+}
+
 function Set-DemoForeground {
     param([System.Diagnostics.Process]$Process, [int]$SettleMs = 250)
     if (-not $Process) { return $false }
     try { $Process.Refresh() } catch {}
     $ok = $false
     try { $ok = [bool](Get-WShell).AppActivate($Process.Id) } catch {}
-    if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
-        [void][DemoNative.Win32]::SetForegroundWindow($Process.MainWindowHandle)
+    $h = Get-DemoWindowHandle -Process $Process
+    if ($h -ne [IntPtr]::Zero) {
+        [void][DemoNative.Win32]::SetForegroundWindow($h)
+    } elseif (-not $ok) {
+        Write-Warning ("No window handle for process '{0}' (pid {1}) - focus step did nothing. Multi-process apps (browsers, Electron) have handle-less child processes: target them with titleContains instead of processName." -f $Process.ProcessName, $Process.Id)
     }
     Start-Sleep -Milliseconds $SettleMs
     return $ok
@@ -171,7 +190,9 @@ function Start-DemoApp {
 function Get-DemoWindowProcess {
     param([string]$As, [string]$Title, [string]$TitleContains, [string]$ProcessName)
     if ($As -and $script:DemoWindows.ContainsKey($As)) { return $script:DemoWindows[$As] }
-    $candidates = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle }
+    # Filter through Get-DemoWindowHandle so handle-less processes (null MainWindowHandle,
+    # e.g. browser content processes) can never be selected as a target.
+    $candidates = Get-Process | Where-Object { (Get-DemoWindowHandle -Process $_) -ne [IntPtr]::Zero -and $_.MainWindowTitle }
     if ($Title)          { $candidates = $candidates | Where-Object { $_.MainWindowTitle -eq $Title } }
     elseif ($TitleContains) { $candidates = $candidates | Where-Object { $_.MainWindowTitle -like "*$TitleContains*" } }
     elseif ($ProcessName){ $candidates = $candidates | Where-Object { $_.ProcessName -eq ($ProcessName -replace '\.exe$','') } }
@@ -191,8 +212,11 @@ function Set-DemoWindowState {
         [string]$State,                       # normal|maximized|minimized
         [Nullable[int]]$X, [Nullable[int]]$Y, [Nullable[int]]$Width, [Nullable[int]]$Height
     )
-    if (-not $Process -or $Process.MainWindowHandle -eq [IntPtr]::Zero) { return }
-    $h = $Process.MainWindowHandle
+    $h = Get-DemoWindowHandle -Process $Process
+    if ($h -eq [IntPtr]::Zero) {
+        if ($Process) { Write-Warning ("No window handle for process '{0}' (pid {1}) - window step did nothing." -f $Process.ProcessName, $Process.Id) }
+        return
+    }
     switch ($State) {
         'maximized' { [void][DemoNative.Win32]::ShowWindow($h, [DemoNative.Win32]::SW_MAXIMIZE) }
         'minimized' { [void][DemoNative.Win32]::ShowWindow($h, [DemoNative.Win32]::SW_MINIMIZE) }
@@ -333,6 +357,6 @@ function Reset-DemoEngineState {
 
 Export-ModuleMember -Function `
     Get-WShell, ConvertTo-SendKeysLiteral, ConvertTo-SendKeysChord, Get-DemoKeyVocabulary, `
-    Set-DemoForeground, Start-DemoApp, Get-DemoWindowProcess, Focus-DemoWindow, Set-DemoWindowState, `
+    Set-DemoForeground, Get-DemoWindowHandle, Start-DemoApp, Get-DemoWindowProcess, Focus-DemoWindow, Set-DemoWindowState, `
     Send-DemoText, Send-DemoKeys, Invoke-DemoRun, Invoke-DemoClick, Save-DemoScreenshot, `
     Set-DemoTerminalStyle, Restore-DemoTerminalStyle, Set-ControllerWindowState, Reset-DemoEngineState

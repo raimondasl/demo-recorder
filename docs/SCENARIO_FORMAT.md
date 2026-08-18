@@ -36,6 +36,8 @@ sensible default.
 | | `crf` | `23` | Quality (lower = sharper/bigger). |
 | | `preset` | `veryfast` | x264 speed/efficiency. |
 | | `captureCursor` | `true` | Show the mouse cursor in the video. |
+| | `crashSafe` | `true` | Record a fragmented MP4 so the take survives an abrupt kill (window closed / Ctrl+C / crash); remuxed losslessly to a normal `+faststart` MP4 on a clean stop. |
+| | `maxSeconds` | `7200` | Hard cap on capture length, so an orphaned ffmpeg can't record until the disk fills. `0` disables. |
 | | `region` | _full screen_ | `{x,y,width,height}` rectangle, or `{ "window": "Exact Title" }`. |
 | | `audioDevice` | _none_ | dshow device to record audio (see "Narration in the video" below). |
 | `defaults` | `typeStyle` | `human` | `human` types char-by-char; `instant` is paste-speed. |
@@ -149,12 +151,11 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
 
 - **Never target a browser (or any multi-process app) by `processName`.** Chrome,
   Edge and Firefox run a parent plus many content processes, and the content ones
-  have no `MainWindowHandle`. If the lookup lands on one, the run dies with
-  `Cannot convert argument "hWnd", with value: "" ... Cannot convert null to type
-  "System.IntPtr"` — and because the engine stops mid-scenario, ffmpeg never
-  finalizes the MP4, so you are left with an unplayable file (`moov atom not
-  found`). Target the **window** instead, by `titleContains`, which by
-  construction belongs to a window that exists:
+  have no `MainWindowHandle`. The engine now guards against this — the validator
+  warns when you name a known multi-process app, and at run time the step warns and
+  does nothing instead of aborting the take — but a `focus` that quietly does
+  nothing still means your keystrokes land somewhere else. Target the **window**
+  instead, by `titleContains`, which by construction belongs to a window that exists:
 
   ```json
   { "action": "run",   "command": "Start-Process firefox -ArgumentList '-private-window', 'C:\\path\\page.html'", "waitMs": 9000 },
@@ -183,7 +184,7 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
 
 - **Watch a rehearsal (`-RecordMode none`) with your eyes on the terminal**, not
   just the exit code. Both failures above exit 0 from the operator's point of
-  view: one aborts after the recording has started, the other types a command that
+  view: one now warns and does nothing, the other types a command that
   merely fails.
 
 ### Narration in the video

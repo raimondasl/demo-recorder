@@ -20,6 +20,25 @@ $script:Required = @{
     'screenshot'='';'record'='op';'marker'='label';'prompt'='message'
 }
 
+
+# Apps that run a parent plus many child processes. Their content/renderer children
+# have no MainWindowHandle, so targeting them by processName can select a handle-less
+# process and the focus/window step then silently does nothing. Target by titleContains.
+$script:MultiProcessApps = @(
+    'chrome','msedge','msedgewebview2','firefox','brave','opera','vivaldi','iexplore',
+    'code','slack','discord','teams','ms-teams','spotify','notion','obsidian','signal','postman','figma'
+)
+
+# Shared check for focus/window: flag processName values known to be multi-process.
+function Test-MultiProcessTarget {
+    param($Step, [string]$Loc, $Warnings)
+    $pn = Get-Prop $Step 'processName'
+    if (-not $pn) { return }
+    $bare = ($pn -replace '\.exe$', '').ToLowerInvariant()
+    if ($script:MultiProcessApps -contains $bare) {
+        [void]$Warnings.Add("$Loc targets '$pn' by processName, but that app runs multiple processes whose child processes have no window handle - this step may silently do nothing. Use titleContains (a title belongs to a window), or launch it yourself and target it with 'as'.")
+    }
+}
 function Get-Prop {
     # Returns the property value, or $Default when the property is absent or null.
     # NOTE: false/0/'' are valid values and are returned as-is (do NOT treat them
@@ -113,12 +132,14 @@ function Test-DemoScenario {
                 if (-not (Get-Prop $step 'as') -and -not (Get-Prop $step 'title') -and -not (Get-Prop $step 'titleContains') -and -not (Get-Prop $step 'processName')) {
                     [void]$errors.Add("$loc needs one of: as, title, titleContains, processName.")
                 }
+                Test-MultiProcessTarget -Step $step -Loc $loc -Warnings $warnings
             }
             'window' {
                 if (-not (Get-Prop $step 'as') -and -not (Get-Prop $step 'title') -and -not (Get-Prop $step 'titleContains') -and -not (Get-Prop $step 'processName')) {
                     [void]$errors.Add("$loc needs a target: as, title, titleContains, or processName.")
                 }
                 $st = Get-Prop $step 'state'; if ($st -and $st -notin @('normal','maximized','minimized')) { [void]$errors.Add("$loc state '$st' invalid (normal|maximized|minimized).") }
+                Test-MultiProcessTarget -Step $step -Loc $loc -Warnings $warnings
             }
             'record' {
                 $op = Get-Prop $step 'op'; if ($op -and $op -notin @('start','stop')) { [void]$errors.Add("$loc op '$op' invalid (start|stop).") }
@@ -177,4 +198,4 @@ function Write-DemoScenarioPlan {
     Write-Host "$i steps total." -ForegroundColor Cyan
 }
 
-Export-ModuleMember -Function Get-Prop, Read-DemoScenario, Test-DemoScenario, Write-DemoScenarioPlan
+Export-ModuleMember -Function Get-Prop, Read-DemoScenario, Test-DemoScenario, Write-DemoScenarioPlan, Test-MultiProcessTarget

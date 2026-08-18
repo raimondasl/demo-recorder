@@ -31,6 +31,14 @@ function New-FfmpegArgs {
     $crf     = if ($R.ContainsKey('crf'))       { [int]$R.crf }       else { 23 }
     $preset  = if ($R.ContainsKey('preset'))    { [string]$R.preset } else { 'veryfast' }
     $cursor  = if ($R.ContainsKey('captureCursor')) { [bool]$R.captureCursor } else { $true }
+    # crashSafe writes a fragmented MP4, which stays playable even if this process is
+    # killed outright (closing the controller window, Ctrl+C, a crash) - without it the
+    # moov atom is never written and the take is unreadable. Stop-DemoRecording remuxes
+    # back to a normal +faststart file on the graceful path, so nothing is lost.
+    $crashSafe = if ($R.ContainsKey('crashSafe')) { [bool]$R.crashSafe } else { $true }
+    # Hard duration cap: if the controller dies, ffmpeg is orphaned and would otherwise
+    # record until the disk fills. Generous by default; far beyond any demo.
+    $maxSec  = if ($R.ContainsKey('maxSeconds')) { [int]$R.maxSeconds } else { 7200 }
 
     $a = New-Object System.Collections.ArrayList
     [void]$a.AddRange(@('-y', '-f', 'gdigrab', '-framerate', "$fps", '-draw_mouse', $(if ($cursor) {'1'} else {'0'})))
@@ -56,7 +64,18 @@ function New-FfmpegArgs {
     # Force even dimensions (libx264 + yuv420p requirement) when capturing odd regions.
     [void]$a.AddRange(@('-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2'))
     if ($haveAudio) { [void]$a.AddRange(@('-c:a', 'aac', '-b:a', '160k')) }
-    [void]$a.AddRange(@('-movflags', '+faststart'))
+    if ($maxSec -gt 0) { [void]$a.AddRange(@('-t', "$maxSec")) }
+    if ($crashSafe) {
+        # Fragmented MP4, a new fragment every second, flushed to disk immediately.
+        # Verified empirically: with the movflags alone a kill -9 leaves a 28-byte
+        # unreadable stub (output still buffered, keyframes too far apart); adding
+        # -frag_duration + -flush_packets keeps the on-disk file playable at all
+        # times, losing at most the final fragment.
+        [void]$a.AddRange(@('-movflags', '+frag_keyframe+empty_moov+default_base_moof',
+                            '-frag_duration', '1000000', '-flush_packets', '1'))
+    } else {
+        [void]$a.AddRange(@('-movflags', '+faststart'))
+    }
     [void]$a.Add($OutFile)
     return ($a.ToArray())
 }
@@ -120,11 +139,47 @@ function Start-DemoRecording {
             Write-Host "  Recording (ffmpeg) -> $outFile" -ForegroundColor Green
             return @{
                 mode = 'ffmpeg'; process = $proc; writer = $writer; event = $errEvent;
-                outputFile = $outFile; logFile = $logFile
+                outputFile = $outFile; logFile = $logFile; ffmpeg = $ff
+                crashSafe = $(if ($Recording.ContainsKey('crashSafe')) { [bool]$Recording.crashSafe } else { $true })
             }
         }
         default { throw "Unknown recording mode '$mode'. Use ffmpeg | manual | none." }
     }
+}
+
+# A crash-safe (fragmented) capture is playable as-is, but a normal +faststart MP4
+# seeks better and is friendlier to editors. On the graceful stop path, remux with
+# -c copy (lossless, ~instant). If anything goes wrong we keep the fragmented file,
+# which is still perfectly playable - never trade a working take for a tidy one.
+function Convert-ToFaststart {
+    param([string]$Path, [string]$FfmpegPath)
+    if (-not (Test-Path $Path)) { return $Path }
+    $ff = if ($FfmpegPath) { $FfmpegPath } else { Test-FfmpegAvailable }
+    if (-not $ff) { return $Path }
+    $tmp = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($Path),
+           [System.IO.Path]::GetFileNameWithoutExtension($Path) + '.faststart.tmp.mp4')
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName  = $ff
+        $psi.Arguments = ('-hide_banner -loglevel error -y -i "{0}" -c copy -movflags +faststart "{1}"' -f $Path, $tmp)
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow  = $true
+        $psi.RedirectStandardError = $true
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $err = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+        if ($p.ExitCode -eq 0 -and (Test-Path $tmp) -and (Get-Item $tmp).Length -gt 0) {
+            Remove-Item $Path -Force
+            Rename-Item -Path $tmp -NewName ([System.IO.Path]::GetFileName($Path))
+        } else {
+            Write-Warning "Could not remux to faststart (keeping the crash-safe file, which is playable). ffmpeg: $err"
+            if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+        }
+    } catch {
+        Write-Warning "Could not remux to faststart: $($_.Exception.Message)"
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    }
+    return $Path
 }
 
 function Stop-DemoRecording {
@@ -155,6 +210,10 @@ function Stop-DemoRecording {
             } finally {
                 try { Unregister-Event -SourceIdentifier $Handle.event.Name -ErrorAction SilentlyContinue } catch {}
                 try { $Handle.writer.Close() } catch {}
+            }
+            if ($Handle.ContainsKey('crashSafe') -and $Handle.crashSafe) {
+                $ffPath = if ($Handle.ContainsKey('ffmpeg')) { $Handle.ffmpeg } else { $null }
+                [void](Convert-ToFaststart -Path $Handle.outputFile -FfmpegPath $ffPath)
             }
             return $Handle.outputFile
         }
@@ -221,4 +280,4 @@ function Add-NarrationToVideo {
     return $VideoFile
 }
 
-Export-ModuleMember -Function Test-FfmpegAvailable, Start-DemoRecording, Stop-DemoRecording, Add-NarrationToVideo
+Export-ModuleMember -Function Test-FfmpegAvailable, Start-DemoRecording, Stop-DemoRecording, Add-NarrationToVideo, Convert-ToFaststart
