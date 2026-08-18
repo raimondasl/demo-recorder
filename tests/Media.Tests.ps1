@@ -124,4 +124,66 @@ Describe 'Media (ffmpeg)' -Skip:(-not $HasFfmpeg) {
             Get-StreamTypes $out | Should -Not -Match 'audio'
         }
     }
+
+    Context 'Crash-safe container survives a hard kill' {
+        It 'leaves a playable file when ffmpeg is killed outright' {
+            # Regression test for PR #6: a non-crash-safe capture killed mid-flight
+            # leaves an unreadable stub ("moov atom not found"). Uses lavfi (no screen).
+            $out = Join-Path $script:work 'killed.mp4'
+            $ffArgs = @('-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc=size=320x240:rate=15',
+                      '-c:v','libx264','-preset','ultrafast','-crf','32','-pix_fmt','yuv420p',
+                      '-movflags','+frag_keyframe+empty_moov+default_base_moof',
+                      '-frag_duration','1000000','-flush_packets','1', $out)
+            $p = Start-Process -FilePath $script:ffmpeg -ArgumentList $ffArgs -PassThru -WindowStyle Hidden
+            Start-Sleep -Seconds 5
+            $p.Kill(); $p.WaitForExit(5000) | Out-Null
+            Start-Sleep -Milliseconds 500
+            (Get-Dur $out) | Should -BeGreaterThan 1     # readable, i.e. moov/fragments on disk
+        }
+    }
+
+    Context 'Convert-ToFaststart' {
+        It 'remuxes a fragmented capture to a normal faststart mp4, preserving duration' {
+            $frag = Join-Path $script:work 'frag.mp4'
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=duration=4:size=320x240:rate=15" `
+                -c:v libx264 -preset ultrafast -crf 32 -pix_fmt yuv420p `
+                -movflags '+frag_keyframe+empty_moov+default_base_moof' -frag_duration 1000000 -flush_packets 1 $frag | Out-Null
+            $before = Get-Dur $frag
+            [void](Convert-ToFaststart -Path $frag -FfmpegPath $script:ffmpeg)
+            (Get-Dur $frag) | Should -BeGreaterThan ($before - 0.5)
+            # A fragmented capture also carries moov at the front (empty_moov), so a
+            # moov check proves nothing. Only a real remux removes the moof fragment boxes.
+            $all = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($frag))
+            $all | Should -Not -Match 'moof'
+        }
+        It 'still remuxes when the output directory name contains brackets' {
+            # Regression: Test-Path -Path treats [final] as a character class, so the
+            # remux was silently skipped for perfectly legal Windows paths.
+            $dir = Join-Path $script:work 'Q3 [final]'
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            $frag = Join-Path $dir 'brk.mp4'
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=duration=3:size=320x240:rate=15" `
+                -c:v libx264 -preset ultrafast -crf 32 -pix_fmt yuv420p `
+                -movflags '+frag_keyframe+empty_moov+default_base_moof' -frag_duration 1000000 -flush_packets 1 $frag | Out-Null
+            [void](Convert-ToFaststart -Path $frag -FfmpegPath $script:ffmpeg)
+            $all = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($frag))
+            $all | Should -Not -Match 'moof'
+        }
+        It 'keeps the original take when the remux fails' {
+            # The take must never be deleted before a working replacement is in place.
+            $frag = Join-Path $script:work 'keepme.mp4'
+            & $script:ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=duration=3:size=320x240:rate=15" `
+                -c:v libx264 -preset ultrafast -crf 32 -pix_fmt yuv420p $frag | Out-Null
+            $before = (Get-Item -LiteralPath $frag).Length
+            # Point at a bogus ffmpeg so the remux cannot succeed.
+            [void](Convert-ToFaststart -Path $frag -FfmpegPath (Join-Path $script:work 'no-such-ffmpeg.exe') -WarningAction SilentlyContinue -ErrorAction SilentlyContinue)
+            Test-Path -LiteralPath $frag | Should -BeTrue
+            (Get-Item -LiteralPath $frag).Length | Should -Be $before
+            (Get-Dur $frag) | Should -BeGreaterThan 2      # still playable
+        }
+        It 'returns the path unchanged when the file does not exist' {
+            Convert-ToFaststart -Path (Join-Path $script:work 'nope.mp4') -FfmpegPath $script:ffmpeg |
+                Should -Be (Join-Path $script:work 'nope.mp4')
+        }
+    }
 }

@@ -81,8 +81,10 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 > ⚠️ While a demo runs it **takes over your mouse and keyboard** (it sends real
 > keystrokes to whatever window is focused). Don't type or click until it's done.
-> Slam the mouse into a corner or `Alt+Tab` only if you must abort — closing the
-> controller window stops the run and finalizes the video.
+> Slam the mouse into a corner or `Alt+Tab` only if you must abort. However you
+> stop it, the take survives: a normal finish or a mid-scenario error finalizes the
+> MP4 cleanly, and even force-closing the controller window leaves a playable file
+> (see *Recording survives an interrupted run* below).
 
 ---
 
@@ -119,6 +121,29 @@ Override at the command line without editing the scenario:
 ```powershell
 .\Invoke-Demo.ps1 .\scenarios\my-demo.json -RecordMode manual
 .\Invoke-Demo.ps1 .\scenarios\my-demo.json -NoRecord
+```
+
+### Recording survives an interrupted run
+
+Captures are written **crash-safe** (a fragmented MP4, flushed every second), so
+the file on disk is playable at *any* moment:
+
+| How the run ends | Result |
+|---|---|
+| Normal finish | Clean MP4, losslessly remuxed to `+faststart` |
+| A step throws mid-scenario | Same — the recording is finalized before the error is reported |
+| Controller force-closed / crash | Still playable, missing at most the last second (not remuxed) |
+
+Previously an interrupted run left an unreadable file (`moov atom not found`)
+because the `moov` atom is only written on a graceful stop. Turn it off with
+`recording.crashSafe: false` if you specifically want a plain `+faststart` capture.
+
+A killed controller also orphans `ffmpeg`, so captures carry a hard
+`recording.maxSeconds` cap (default 2 h) to stop a stray process recording until
+the disk fills. If a run was killed, check for a leftover process:
+
+```powershell
+Get-Process ffmpeg -ErrorAction SilentlyContinue | Stop-Process
 ```
 
 ### Narration is baked into the video

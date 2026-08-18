@@ -26,6 +26,8 @@
             "crf": { "type": "integer", "default": 23, "minimum": 0, "maximum": 51, "description": "x264 quality; lower = better/bigger. 18-24 is sensible." },
             "preset": { "type": "string", "default": "veryfast", "description": "x264 speed/efficiency preset." },
             "captureCursor": { "type": "boolean", "default": true },
+            "crashSafe": { "type": "boolean", "default": true, "description": "Record as a fragmented MP4 so the file stays playable even if the run is killed outright (window closed, Ctrl+C, crash). On a normal stop it is remuxed losslessly back to a regular +faststart MP4, so there is no downside. Set false to write +faststart directly." },
+            "maxSeconds": { "type": "integer", "default": 7200, "description": "Hard cap on capture length. Safety net: if the controller process dies, ffmpeg is orphaned and would otherwise record until the disk fills. 0 disables the cap." },
             "region": {
               "type": "object",
               "description": "Capture only part of the screen, or a window by title. Omit to capture the full primary display.",
