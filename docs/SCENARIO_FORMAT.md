@@ -151,11 +151,13 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
 
 - **Never target a browser (or any multi-process app) by `processName`.** Chrome,
   Edge and Firefox run a parent plus many content processes, and the content ones
-  have no `MainWindowHandle`. The engine now guards against this — the validator
-  warns when you name a known multi-process app, and at run time the step warns and
-  does nothing instead of aborting the take — but a `focus` that quietly does
-  nothing still means your keystrokes land somewhere else. Target the **window**
-  instead, by `titleContains`, which by construction belongs to a window that exists:
+  have no `MainWindowHandle`. The engine no longer *crashes* on this — the
+  validator warns when you name a known multi-process app, the lookup skips
+  handle-less processes, and the recording is always finalized — but it still
+  can't invent a window: a `focus` that matches nothing **throws and stops the
+  run** (exit 1), and a `window` that matches nothing warns and does nothing.
+  Target the **window** instead, by `titleContains`, which by construction belongs
+  to a window that exists:
 
   ```json
   { "action": "run",   "command": "Start-Process firefox -ArgumentList '-private-window', 'C:\\path\\page.html'", "waitMs": 9000 },
@@ -183,9 +185,9 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
   Raising `defaults.stepPauseMs` (700 → ~1100) helps for the same reason.
 
 - **Watch a rehearsal (`-RecordMode none`) with your eyes on the terminal**, not
-  just the exit code. Both failures above exit 0 from the operator's point of
-  view: one now warns and does nothing, the other types a command that
-  merely fails.
+  just the exit code. A failed `focus` does exit 1, but the quieter failure — a
+  command typed into a window that wasn't ready, so it runs truncated — exits 0
+  and looks fine until playback.
 
 ### Narration in the video
 

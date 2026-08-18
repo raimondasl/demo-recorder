@@ -1,28 +1,5 @@
 # Demo Recorder
 
-### Recording survives an interrupted run
-
-Captures are written **crash-safe** (a fragmented MP4, flushed every second), so
-the file on disk is playable at *any* moment:
-
-| How the run ends | Result |
-|---|---|
-| Normal finish | Clean MP4, losslessly remuxed to `+faststart` |
-| A step throws mid-scenario | Same — the recording is finalized before the error is reported |
-| Controller force-closed / crash | Still playable, missing at most the last second (not remuxed) |
-
-Previously an interrupted run left an unreadable file (`moov atom not found`)
-because the `moov` atom is only written on a graceful stop. Turn it off with
-`recording.crashSafe: false` if you specifically want a plain `+faststart` capture.
-
-A killed controller also orphans `ffmpeg`, so captures carry a hard
-`recording.maxSeconds` cap (default 2 h) to stop a stray process recording until
-the disk fills. If a run was killed, check for a leftover process:
-
-```powershell
-Get-Process ffmpeg -ErrorAction SilentlyContinue | Stop-Process
-```
-
 [![CI](https://github.com/raimondasl/demo-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/raimondasl/demo-recorder/actions/workflows/ci.yml)
 
 Record a video demo of any Windows app or CLI workflow — **fully automated**.

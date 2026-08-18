@@ -153,11 +153,15 @@ function Start-DemoRecording {
 # which is still perfectly playable - never trade a working take for a tidy one.
 function Convert-ToFaststart {
     param([string]$Path, [string]$FfmpegPath)
-    if (-not (Test-Path $Path)) { return $Path }
+    # -LiteralPath everywhere: an outputDir like "Q3 [final]" is a legal Windows path,
+    # but Test-Path -Path would read [final] as a character class, silently decide the
+    # file does not exist and skip the remux without a word.
+    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
     $ff = if ($FfmpegPath) { $FfmpegPath } else { Test-FfmpegAvailable }
     if (-not $ff) { return $Path }
     $tmp = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($Path),
            [System.IO.Path]::GetFileNameWithoutExtension($Path) + '.faststart.tmp.mp4')
+    $bak = $Path + '.bak'
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName  = $ff
@@ -168,16 +172,21 @@ function Convert-ToFaststart {
         $p = [System.Diagnostics.Process]::Start($psi)
         $err = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
-        if ($p.ExitCode -eq 0 -and (Test-Path $tmp) -and (Get-Item $tmp).Length -gt 0) {
-            Remove-Item $Path -Force
-            Rename-Item -Path $tmp -NewName ([System.IO.Path]::GetFileName($Path))
+        if ($p.ExitCode -eq 0 -and (Test-Path -LiteralPath $tmp) -and (Get-Item -LiteralPath $tmp).Length -gt 0) {
+            # Atomic swap: the finished take keeps its name until the replacement is
+            # actually in place. Never delete-then-rename - a failure there would
+            # destroy the recording we just captured.
+            [System.IO.File]::Replace($tmp, $Path, $bak)
+            Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
         } else {
             Write-Warning "Could not remux to faststart (keeping the crash-safe file, which is playable). ffmpeg: $err"
-            if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
         }
     } catch {
         Write-Warning "Could not remux to faststart: $($_.Exception.Message)"
-        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    } finally {
+        foreach ($leftover in @($tmp, $bak)) {
+            if (Test-Path -LiteralPath $leftover) { Remove-Item -LiteralPath $leftover -Force -ErrorAction SilentlyContinue }
+        }
     }
     return $Path
 }

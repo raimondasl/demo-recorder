@@ -180,7 +180,9 @@ function Start-DemoApp {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.ElapsedMilliseconds -lt $WaitForWindowMs) {
         try { $proc.Refresh() } catch {}
-        if (-not $proc.HasExited -and $proc.MainWindowHandle -ne [IntPtr]::Zero) { break }
+        # Use the safe accessor: a null handle is "no window yet", not "ready" -
+        # the raw check would break out immediately and store a handle-less process.
+        if (-not $proc.HasExited -and (Get-DemoWindowHandle -Process $proc) -ne [IntPtr]::Zero) { break }
         Start-Sleep -Milliseconds 120
     }
     if ($As) { $script:DemoWindows[$As] = $proc }
@@ -215,6 +217,7 @@ function Set-DemoWindowState {
     $h = Get-DemoWindowHandle -Process $Process
     if ($h -eq [IntPtr]::Zero) {
         if ($Process) { Write-Warning ("No window handle for process '{0}' (pid {1}) - window step did nothing." -f $Process.ProcessName, $Process.Id) }
+        else           { Write-Warning "Window step target could not be resolved to a running window - step did nothing." }
         return
     }
     switch ($State) {

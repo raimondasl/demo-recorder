@@ -36,7 +36,7 @@ function Test-MultiProcessTarget {
     if (-not $pn) { return }
     $bare = ($pn -replace '\.exe$', '').ToLowerInvariant()
     if ($script:MultiProcessApps -contains $bare) {
-        [void]$Warnings.Add("$Loc targets '$pn' by processName, but that app runs multiple processes whose child processes have no window handle - this step may silently do nothing. Use titleContains (a title belongs to a window), or launch it yourself and target it with 'as'.")
+        [void]$Warnings.Add("$Loc targets '$pn' by processName, but that app runs multiple processes whose child processes have no window handle - a focus step will fail the run and a window step will do nothing. Use titleContains (a title belongs to a window), or launch it yourself and target it with 'as'.")
     }
 }
 function Get-Prop {
