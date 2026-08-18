@@ -147,6 +147,45 @@ Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Up`, `Down`, `Left`,
 - **Timing:** the global `stepPauseMs` plus per-step `waitMs`/`pauseAfterMs` set
   the rhythm. Slow demos read better than fast ones.
 
+- **Never target a browser (or any multi-process app) by `processName`.** Chrome,
+  Edge and Firefox run a parent plus many content processes, and the content ones
+  have no `MainWindowHandle`. If the lookup lands on one, the run dies with
+  `Cannot convert argument "hWnd", with value: "" ... Cannot convert null to type
+  "System.IntPtr"` — and because the engine stops mid-scenario, ffmpeg never
+  finalizes the MP4, so you are left with an unplayable file (`moov atom not
+  found`). Target the **window** instead, by `titleContains`, which by
+  construction belongs to a window that exists:
+
+  ```json
+  { "action": "run",   "command": "Start-Process firefox -ArgumentList '-private-window', 'C:\\path\\page.html'", "waitMs": 9000 },
+  { "action": "focus",  "titleContains": "My Page Title" },
+  { "action": "window", "titleContains": "My Page Title", "state": "maximized" }
+  ```
+
+  Give the app time to *create* the window before anything looks for it — a
+  `waitMs` on the launching step, not a `wait` after the `focus`.
+
+- **`focus` the terminal immediately before every command you type into it.**
+  Typing starts as soon as the step does; if the window is still settling (right
+  after a `window` maximize, a caption, or another app taking focus) the first
+  characters are simply lost, and a *shortened* command is far worse than a failed
+  one — `uv run rr digest ...` arrived as `un rr digest ...`, which errored quietly
+  and left the previous output on screen, so the take looked fine until playback.
+  Cheap insurance, once per typed command:
+
+  ```json
+  { "action": "focus", "as": "term" },
+  { "action": "wait",  "ms": 700 },
+  { "action": "run",   "as": "term", "command": "..." }
+  ```
+
+  Raising `defaults.stepPauseMs` (700 → ~1100) helps for the same reason.
+
+- **Watch a rehearsal (`-RecordMode none`) with your eyes on the terminal**, not
+  just the exit code. Both failures above exit 0 from the operator's point of
+  view: one aborts after the recording has started, the other types a command that
+  merely fails.
+
 ### Narration in the video
 
 By default (ffmpeg mode), narration **is** in the MP4. Each `narrate`/`say` line
