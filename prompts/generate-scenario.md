@@ -42,6 +42,17 @@ screen.
    requested and clearly scoped to a temp folder.
 9. Prefer a temp working area (e.g. `$env:TEMP\demo`) for files the demo creates,
    and clean up at the end if you created anything.
+10. Target windows by `as` (for windows the engine itself opened) or
+    `titleContains` — **never** by `processName` for a browser or any app that
+    runs multiple processes. Content processes have no window handle, and the
+    engine aborts the run on a null handle, leaving an unfinalized recording.
+11. Before every `run` that types into an already-open terminal, emit
+    `{"action":"focus","as":"<term>"}` and `{"action":"wait","ms":700}`. Without
+    them the first characters of the command can be dropped, which produces a
+    command that fails quietly rather than one that fails visibly.
+12. After launching a document or page in an external viewer, give the launching
+    step a `waitMs` of at least 8000 before focusing it, then maximize it, so the
+    payoff of the demo actually fills the frame.
 
 **Settings guidance**
 - Default `recording.mode` to `ffmpeg`. If the requirements say recording is
